@@ -59,6 +59,26 @@ def ground(frame_paths: List[str], transcript: str = "",
     return gc.vision_describe(images, prompt)
 
 
+_VERIFY_PROMPT = (
+    "The image is a grid of evenly-sampled frames from ONE short video, in time "
+    "order. Below is a DRAFT description of that video. Re-check the draft "
+    "carefully against the frames and produce a corrected version:\n"
+    "- remove or fix anything that is wrong or not actually visible;\n"
+    "- add important detail that the draft missed, ESPECIALLY what HAPPENS across "
+    "the clip — actions, motion and its direction, and how the scene changes from "
+    "the first frames to the last;\n"
+    "- keep it specific, factual, and 3-5 sentences.\n"
+    "Return ONLY the corrected description.\n\nDraft:\n\"\"\"\n{desc}\n\"\"\""
+)
+
+
+def verify(frame_paths: List[str], description: str, montage_path: str) -> str:
+    """Second look — re-check the grounded description against the frames and
+    correct/enrich it (Raccoon's approach). Reuses the montage the model saw."""
+    prompt = _VERIFY_PROMPT.format(desc=description)
+    return gc.vision_describe([montage_path], prompt, max_tokens=520)
+
+
 def stylize(description: str, styles: List[str]) -> dict:
     ordered = [s for s in S.STYLE_ORDER if s in styles] or styles
     guide = S.guide_for(ordered)

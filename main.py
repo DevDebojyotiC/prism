@@ -26,6 +26,9 @@ INPUT_PATH = os.environ.get("PRISM_INPUT", "/input/tasks.json")
 OUTPUT_PATH = os.environ.get("PRISM_OUTPUT", "/output/results.json")
 N_FRAMES_ENV = os.environ.get("PRISM_FRAMES")  # fixed override; else adaptive by duration
 USE_AUDIO = os.environ.get("PRISM_AUDIO", "0").strip().lower() in {"1", "true", "yes"}
+# second-look pass: re-check the grounding against the frames and add what changes
+# over time (the full-video judge sees motion our static montage can under-describe)
+USE_VERIFY = os.environ.get("PRISM_VERIFY", "1").strip().lower() in {"1", "true", "yes"}
 
 
 # When the pipeline fails outright (no description to ground from), emit four
@@ -69,7 +72,10 @@ def process_one(task: dict, workdir: str) -> dict:
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
-    description = caption.ground(frames, transcript)
+    montage_path = os.path.join(workdir, f"{tid}_montage.jpg")
+    description = caption.ground(frames, transcript, montage_out=montage_path)
+    if USE_VERIFY:
+        description = caption.verify(frames, description, montage_path)
     return caption.stylize(description, styles)
 
 
