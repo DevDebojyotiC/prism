@@ -14,6 +14,7 @@ from dotenv import load_dotenv, find_dotenv
 
 import video
 import caption
+import gemma_client as gc
 from styles import STYLE_ORDER
 
 # load a local .env when running on my machine. Inside the Docker image there is
@@ -95,8 +96,12 @@ def main() -> int:
             for s in styles:
                 caps.setdefault(s, "A short video clip.")
             results.append({"task_id": tid, "captions": caps})
+            # flag clips that fell back to a generic caption — the thing that
+            # quietly drags the average down when the model call fails at grading
+            fell_back = any(v in set(_GENERIC_FALLBACK.values()) for v in caps.values())
             print(f"[prism] {tid} done in {time.time()-t0:.1f}s "
-                  f"(total {time.time()-started:.1f}s)", file=sys.stderr)
+                  f"(total {time.time()-started:.1f}s) | backend={gc.LAST_BACKEND}"
+                  f"{' | FALLBACK' if fell_back else ''}", file=sys.stderr)
 
     os.makedirs(os.path.dirname(OUTPUT_PATH) or ".", exist_ok=True)
     json.dump(results, open(OUTPUT_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
