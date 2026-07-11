@@ -1,0 +1,51 @@
+# secrets / environment
+.env
+.env.*
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*Env/
+env/
+venv/
+.venv/
+
+# node / next.js (demo frontend)
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+next-env.d.ts
+
+# generated media & pipeline outputs
+output/
+.run/
+frames/
+*.mp4
+*.mp3
+*.wav
+
+# local scratch / generated artifacts
+_diag/
+_dockertest/
+_sweep_results.json
+test/_sweep_results.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# kept locally, not part of the repo
+SUBMIT.md
+AMD_SETUP.md
+test/calibrate_gemini.py
+test/sweep_gemini.py
+test/diag_animals.py
+test/calibrate_frames.py
+web/prism-redesign_5.html
+web/PRISM_UI_BRIEF.md
