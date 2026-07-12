@@ -93,7 +93,9 @@ def ground(frame_paths: List[str], transcript: str = "",
         # empty budget.
         rem2 = (deadline - _t.time()) if deadline else 60.0
         n = len(frame_paths)
-        k = 8 if rem2 >= 14 else (6 if rem2 >= 9 else 4)
+        # Kimi takes every extracted still (16 on fast clips) when the clock is
+        # comfortable; degrade count as the window shrinks
+        k = min(n, 16) if rem2 >= 14 else (6 if rem2 >= 9 else 4)
         if n > k:
             idxs = sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
             picks = [frame_paths[i] for i in idxs]
@@ -118,27 +120,40 @@ def ground(frame_paths: List[str], transcript: str = "",
         # validation clips: Kimi > Qwen3-VL-235B > Gemma. All fire at once, so
         # a losing rung never inherits an exhausted clock; a weaker answer is
         # only used when every stronger model has already failed.
+        # hedges get 5 frames spread over the WHOLE clip, not the first five
+        if len(picks) > _MAX_IMAGES:
+            hidx = sorted({round(i * (len(picks) - 1) / (_MAX_IMAGES - 1))
+                           for i in range(_MAX_IMAGES)})
+            hedge_picks = [picks[i] for i in hidx]
+        else:
+            hedge_picks = list(picks)
         from concurrent.futures import ThreadPoolExecutor
         ex = ThreadPoolExecutor(max_workers=3)
         f_kimi = ex.submit(gc.kimi_describe, picks, _GROUND_PROMPT + extra,
                            600, 60, deadline)
-        f_qwen = ex.submit(gc.hedge_vlm_describe, picks[:_MAX_IMAGES],
+        f_qwen = ex.submit(gc.hedge_vlm_describe, hedge_picks,
                            _GROUND_PROMPT + extra, 600, 45, deadline)
-        f_gemma = ex.submit(gc.vision_describe, picks[:_MAX_IMAGES],
+        f_gemma = ex.submit(gc.vision_describe, hedge_picks,
                             _GROUND_PROMPT + extra, 600, 120, deadline)
         ex.shutdown(wait=False)
+        import sys as _sys
+        t_race = _t.time()
         try:
             out = f_kimi.result()
             if out:
                 gc.LAST_BACKEND = "kimi"  # the hedge threads may stomp it late
+                print(f"[prism] ground winner=kimi in {_t.time()-t_race:.1f}s "
+                      f"({len(picks)} frames)", file=_sys.stderr)
                 return out
         except Exception:
             pass
-        for fut in (f_qwen, f_gemma):
+        for fname, fut in (("qwen", f_qwen), ("gemma", f_gemma)):
             try:
                 rem3 = max(2.0, (deadline - _t.time())) if deadline else 60.0
                 out = fut.result(timeout=rem3)
                 if out:
+                    print(f"[prism] ground winner={fname} in {_t.time()-t_race:.1f}s "
+                          f"({len(picks)} frames)", file=_sys.stderr)
                     return out
             except Exception:
                 pass

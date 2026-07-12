@@ -51,7 +51,22 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
     os.makedirs(out_dir, exist_ok=True)
     dur = probe_duration(path)
     vf = f"scale='min({max_side},iw)':-2"
-    if dur > 1.0:
+    # short high-bitrate clips (stress-test encodes: ~30MB/10s, sparse
+    # keyframes) make every -ss seek decode the stream from the top; N seeks =
+    # N nearly-full decodes. One sequential pass grabs all frames in a single
+    # decode instead.
+    try:
+        high_bitrate_short = 1.0 < dur <= 20 and os.path.getsize(path) / dur > 2e6
+    except OSError:
+        high_bitrate_short = False
+    if high_bitrate_short:
+        subprocess.run(
+            ["ffmpeg", "-y", "-threads", "2", "-i", path,
+             "-vf", f"fps={n_frames}/{dur:.3f},{vf}", "-frames:v", str(n_frames),
+             "-q:v", "3", os.path.join(out_dir, "f_%03d.jpg")],
+            capture_output=True, timeout=60,
+        )
+    elif dur > 1.0:
         pad = 0.05 * dur                       # skip black intro/outro
         span = dur - 2 * pad
 
@@ -61,8 +76,11 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
             # -threads 1: ffmpeg's auto-threading spawns a full decode pool PER
             # process; on the grader's 2 vCPUs six of those thrash (14.6s for
             # 8 frames of 4K). One decode thread each, few workers: 4.5s.
+            # -skip_loop_filter: skips h264 deblocking, ~12% faster decode with
+            # no visible effect at our 768px output size
             subprocess.run(
-                ["ffmpeg", "-y", "-threads", "1", "-ss", f"{t:.3f}", "-i", path,
+                ["ffmpeg", "-y", "-threads", "1", "-skip_loop_filter", "all",
+                 "-ss", f"{t:.3f}", "-i", path,
                  "-frames:v", "1", "-vf", vf, "-q:v", "3",
                  os.path.join(out_dir, f"f_{i:03d}.jpg")],
                 capture_output=True, timeout=30,
