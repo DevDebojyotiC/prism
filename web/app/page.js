@@ -188,17 +188,22 @@ export default function Page() {
     });
   }
 
-  // Gemma voice, fully parallel: fire synthesis for EVERY sentence chunk at
-  // once, play them in order as they arrive. If a later chunk isn't ready when
-  // its turn comes, we WAIT (button shows "next line"), never fall back early;
-  // the browser voice takes over the remaining text only on a real error.
+  // Gemma voice, paired batches: chunks are synthesized two at a time, and the
+  // next pair is fired the moment the current pair starts playing, so synthesis
+  // hides behind playback while never committing more than ~2 calls of ZeroGPU
+  // quota ahead (each call bills a flat GPU window, so an early "stop" wastes at
+  // most one pair). If the next chunk isn't ready when its turn comes we WAIT
+  // (button shows "next line"); the browser voice takes over the remaining text
+  // only on a real error.
   async function speak(text) {
     if (speaking || voiceLoading) { stopSpeaking(); return; }
     const run = { aborted: false };
     voiceRun.current = run;
     const chunks = ttsChunks(text);
+    const jobs = new Array(chunks.length).fill(null);
+    const fire = (i) => { if (i < chunks.length && !jobs[i] && !run.aborted) jobs[i] = fetchTTS(chunks[i]); };
+    fire(0); fire(1);                              // batch 1: sentences 1+2 in parallel
     setVoiceLoading(true);
-    const jobs = chunks.map((c) => fetchTTS(c));   // all in flight immediately
     const first = await jobs[0];
     if (run.aborted) return;
     if (!first.audio) { setVoiceLoading(false); browserSpeak(text); return; }
@@ -206,6 +211,7 @@ export default function Page() {
     setSpeaking(true);
     let res = first;
     for (let i = 0; !run.aborted; i++) {
+      if (i % 2 === 0) { fire(i + 2); fire(i + 3); }  // next pair, while this pair plays
       await playUri(res.audio);
       if (run.aborted || i + 1 >= chunks.length) break;
       setBuffering(true);                          // waiting on the next line ≠ failure
