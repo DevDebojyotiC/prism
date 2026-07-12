@@ -98,6 +98,10 @@ def process_one(task: dict, workdir: str) -> dict:
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
+    if len(frames) >= 20 and time.time() - t_dl > 16:
+        # second timing guard: download+extraction already used too much of the
+        # 30s budget; fall back to quick grounding by thinning to ~8 stills
+        frames = frames[::3]
     if stt_future is not None:
         try:
             stt_text = stt_future.result(timeout=10)  # hard cap; never stalls a clip
