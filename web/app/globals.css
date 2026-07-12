@@ -556,6 +556,28 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 .langnote{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
 .langnote b{color:var(--ink);font-weight:600}
 
+/* ── gemmaverse ────────────────────────────────────────────────────────────── */
+.gemmaverse{margin:72px 0 8px}
+.gv-title{font-size:20px;font-weight:600;margin:26px 0 6px;letter-spacing:-.01em}
+.gv-sub{font-size:13px;font-weight:400;color:var(--ink-faint)}
+.gv-lead{margin:0 0 16px;font-size:14px;line-height:1.6;color:var(--ink-dim);max-width:640px}
+.gv-lead b{color:var(--ink)}
+.gv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.gv-card{border:1px solid var(--line);border-radius:12px;background:var(--bg-2);padding:14px 16px}
+.gv-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.gv-head i{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+.gv-head b{font-size:13.5px;color:var(--ink)}
+.gv-role{font-family:var(--mono);font-size:11px;color:var(--c);text-transform:uppercase;letter-spacing:.08em;margin-left:auto}
+.gv-card p{margin:0 0 10px;font-size:12.5px;line-height:1.6;color:var(--ink-dim)}
+.gv-where{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.gv-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px}
+.gv-stat{border:1px solid var(--line);border-radius:12px;background:var(--card-lo);padding:12px 16px}
+.gv-stat b{display:block;font-size:14px;color:var(--ink);margin-bottom:3px}
+.gv-stat span{font-size:12px;line-height:1.55;color:var(--ink-dim)}
+.gv-foot{margin:14px 0 0;font-size:12.5px;color:var(--ink-faint)}
+.gv-foot a{color:var(--ink-dim);text-decoration:underline;text-underline-offset:3px}
+.gv-foot a:hover{color:var(--ink)}
+
 /* ── judge Q&A ─────────────────────────────────────────────────────────────── */
 .faq{margin:72px 0 8px}
 .faq-title{font-size:20px;font-weight:600;margin:26px 0 14px;letter-spacing:-.01em}

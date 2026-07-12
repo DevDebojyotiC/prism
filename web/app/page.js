@@ -321,12 +321,13 @@ export default function Page() {
         {/* ══════ HERO ══════ */}
         <section className="hero">
           <div>
-            <div className="eyebrow">Gemma-4 captioning · one clip, four voices</div>
+            <div className="eyebrow">Four Gemma models · one agent · every graded word is Gemma's</div>
             <h2>One clip in.<span className="out" ref={outRef}>Four voices out.</span></h2>
             <p>
               Prism samples high-res frames from your video, grounds them into one
-              factual description, then <b>Gemma-4</b> refracts that one understanding
-              into four caption styles. You see <b>exactly what the model saw</b>.
+              factual description, then <b>Gemma-4</b> writes every word of all four
+              caption styles, while <b>Gemma 3n</b> listens, <b>EmbeddingGemma</b> verifies,
+              and <b>T5Gemma</b> speaks. You see <b>exactly what the models saw</b>.
             </p>
             <div className="swatches" aria-hidden="true">
               {STYLES.map((s) => (
@@ -595,6 +596,39 @@ export default function Page() {
           </section>
         )}
 
+        {/* ══════ GEMMAVERSE ══════ */}
+        <section className="gemmaverse">
+          <div className="rule" />
+          <h2 className="gv-title">Four Gemma models. One agent. <span className="gv-sub">· Google DeepMind's open family, working as a team</span></h2>
+          <p className="gv-lead">
+            Most captioning agents call one model. Prism runs <b>four members of the Gemma family</b>,
+            each doing the job it measures best at, and every one of them is visible in this demo.
+          </p>
+          <div className="gv-grid">
+            {[
+              { m: "Gemma-4-31B", role: "writes", d: "Authors every caption in every style, every clip, every mode: one structured-JSON call. It also grounds as the always-on last lane of the vision race.", where: "the four caption cards" },
+              { m: "Gemma 3n E4B", role: "hears", d: "Transcribes the soundtrack in 28-second chunks on a side thread, so what is said shapes the captions alongside what is shown.", where: "the Soundtrack and Transcript tabs" },
+              { m: "EmbeddingGemma", role: "verifies", d: "Scores each styled caption's semantic anchor to the grounded facts. Read-only by design: checks can never hurt the captions.", where: "the facts chip on every card" },
+              { m: "T5Gemma-TTS", role: "speaks", d: "The listen button speaks with a community TTS built on T5Gemma weights, synthesized on an AMD Radeon W7900.", where: "the listen button" },
+            ].map((g, i) => (
+              <div key={i} className="gv-card" style={{ "--c": `var(${CHIP_C[i]})` }}>
+                <div className="gv-head"><i /><b>{g.m}</b><span className="gv-role">{g.role}</span></div>
+                <p>{g.d}</p>
+                <div className="gv-where">in this demo: {g.where}</div>
+              </div>
+            ))}
+          </div>
+          <div className="gv-stats">
+            <div className="gv-stat"><b>Best signage OCR</b><span>of every serverless VLM we benchmarked on the public validation clips, at 3-4x their speed (GEMMA_FINDINGS §8)</span></div>
+            <div className="gv-stat"><b>0.9s per call</b><span>six parallel Gemma calls finish in about a second: the styling engine never waits</span></div>
+            <div className="gv-stat"><b>140+ languages</b><span>four voices transcreated with tone intact; sixteen live in the selector above</span></div>
+          </div>
+          <p className="gv-foot">
+            Chosen by measurement, not branding: every claim above is reproduced in{" "}
+            <a href="https://github.com/DevDebojyotiC/prism/blob/main/GEMMA_FINDINGS.md" target="_blank" rel="noreferrer">GEMMA_FINDINGS.md</a>, evidence frames included, alongside what Gemma is not the right tool for.
+          </p>
+        </section>
+
         <section className="faq">
           <div className="rule" />
           <h2 className="faq-title">Straight answers <span className="faq-sub">· what judges (and skeptics) ask us</span></h2>
@@ -637,7 +671,7 @@ export default function Page() {
 
         <footer>
           <div className="rule" />
-          <p>Prism · AMD Developer Hackathon ACT II · Track 2 · every caption authored by Gemma-4</p>
+          <p>Prism · AMD Developer Hackathon ACT II · Track 2 · every caption authored by Gemma-4 · built on Google DeepMind's open-weights Gemma family</p>
         </footer>
       </main>
     </>
