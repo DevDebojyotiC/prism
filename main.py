@@ -100,22 +100,25 @@ def process_one(task: dict, workdir: str) -> dict:
         # slow (usually 4K/long) download already ate the budget: degrade to the
         # quick few-frame grounding so the clip stays inside the 30s cap
         use_flow = False
-    # 16 stills when the download was fast (the grader's always is): with the
-    # -threads/-skip_loop_filter fixes 16 frames cost only ~3s more than 8 at
-    # 2 vCPU, and denser sampling catches brief events (a sprinter crossing in
-    # ~1s) that 8 frames can miss. Slow link -> the proven 8 (or 6) frames.
+    # frame ladder keyed on download time (extraction cost at 2 vCPU in
+    # parens): denser sampling catches brief events (a sprinter crossing in
+    # ~1s) that sparse frames miss, so spend whatever the download left over.
+    #   dl < 6s  -> 16 frames (~7s)     dl < 10s -> 12 frames (~5s)
+    #   dl <= 12s -> 8 frames (~4s)     beyond   -> 6 frames (~3s)
     if N_FRAMES_ENV:
         default_n = 8
     elif use_flow:
         default_n = 25
     elif not gc.kimi_available():
         default_n = 5
-    elif dl_secs <= 5:
+    elif dl_secs < 6:
         default_n = 16
-    elif dl_secs > 10:
-        default_n = 6
-    else:
+    elif dl_secs < 10:
+        default_n = 12
+    elif dl_secs <= 12:
         default_n = 8
+    else:
+        default_n = 6
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
