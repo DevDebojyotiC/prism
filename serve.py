@@ -95,22 +95,6 @@ def _run(vid_path: str, workdir: str) -> dict:
     description = caption.ground(frames, transcript)
     t_ground = time.time() - t1
 
-    t2 = time.time()
-    captions = caption.stylize(description, STYLE_ORDER)
-    t_style = time.time() - t2
-
-    title = caption.make_title(description)  # demo-only human-readable name
-
-    # fact-anchor: EmbeddingGemma similarity of each caption to the grounded facts
-    try:
-        anchors = caption.fact_anchor(description, captions)
-    except Exception:
-        anchors = {}
-
-    # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
-    # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
-    # demo simply omits the row when the endpoint is not configured or down.
-    heard, heard_via = "", ""
     transcript_via = ""
     audio_via = {"v": ""}  # which engine actually served audio this run
 
@@ -127,11 +111,27 @@ def _run(vid_path: str, workdir: str) -> dict:
                 "audible."), max_tokens=max_tokens)
             audio_via["v"] = "Gemini (fallback; Gemma 3n hosting momentarily unavailable)"
             return out
-    try:
-        wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
-    except Exception:
+
+    def _heard_row():
+        """'Gemma hears': soundtrack description (AMD notebook when the tunnel
+        is up, else serverless 3n with Gemini on flaps). Reuses the wav the
+        transcript thread already extracted instead of decoding audio twice."""
+        # prefer the first 28s segment the transcript thread already cut: 3n's
+        # audio encoder ingests ~30s anyway, and the small payload uploads in
+        # ~1s instead of shipping the full clip's audio
         wav = ""
-    if wav:
+        for cand in (os.path.join(workdir, "stt_00.wav"),
+                     os.path.join(workdir, "stt.wav")):
+            if os.path.exists(cand) and os.path.getsize(cand) > 1000:
+                wav = cand
+                break
+        if not wav:
+            try:
+                wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
+            except Exception:
+                wav = ""
+        if not wav:
+            return "", ""
         amd_audio = os.environ.get("AMD_AUDIO_BASE_URL", "").rstrip("/")
         if amd_audio:  # self-hosted on the AMD notebook, when the tunnel is up
             try:
@@ -141,15 +141,43 @@ def _run(vid_path: str, workdir: str) -> dict:
                 rr = _rq.post(f"{amd_audio}/describe", json={"audio_b64": b64},
                               headers={"ngrok-skip-browser-warning": "true"}, timeout=45)
                 if rr.ok and rr.json().get("text"):
-                    heard, heard_via = rr.json()["text"], "on AMD W7900"
+                    return rr.json()["text"], "on AMD W7900"
             except Exception:
                 pass
-        if not heard:  # serverless 3n, with Gemini carrying the feature on flaps
-            try:
-                heard = _hear_any(wav)
-                heard_via = audio_via["v"]
-            except Exception:
-                pass
+        try:
+            return _hear_any(wav), audio_via["v"]
+        except Exception:
+            return "", ""
+
+    # styling, the demo title, and the soundtrack row are mutually independent:
+    # run them concurrently instead of one after another (~5s saved)
+    t2 = time.time()
+    _style_secs = {}
+
+    def _style():
+        s0 = time.time()
+        out = caption.stylize(description, STYLE_ORDER)
+        _style_secs["s"] = time.time() - s0
+        return out
+
+    from concurrent.futures import ThreadPoolExecutor as _XTPE
+    with _XTPE(max_workers=3) as _ex:
+        f_style = _ex.submit(_style)
+        f_title = _ex.submit(caption.make_title, description)
+        f_heard = _ex.submit(_heard_row)
+        captions = f_style.result()
+        try:
+            title = f_title.result()
+        except Exception:
+            title = ""
+        heard, heard_via = f_heard.result()
+    t_style = _style_secs.get("s", time.time() - t2)
+
+    # fact-anchor: EmbeddingGemma similarity of each caption to the grounded facts
+    try:
+        anchors = caption.fact_anchor(description, captions)
+    except Exception:
+        anchors = {}
     # transcript: reuse the side-thread result that already informed the
     # grounding (same text the graded pipeline uses). If it wasn't ready at
     # grounding time we finish waiting for it here, display-only, exactly as
