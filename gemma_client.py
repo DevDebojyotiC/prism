@@ -221,7 +221,7 @@ TRANSCRIBE_PROMPT = (
     "If there is no intelligible speech, reply with exactly NO_SPEECH.")
 
 
-def hear(wav_path: str, prompt: str = "", timeout: int = 60) -> str:
+def hear(wav_path: str, prompt: str = "", timeout: int = 60, max_tokens: int = 90) -> str:
     """Audio description from Gemma 3n E4B, serverless via the HF router (served
     by Together). Note the format quirk: the endpoint rejects OpenAI-style
     input_audio but accepts an audio_url data URI. Experimental: the small
@@ -232,7 +232,7 @@ def hear(wav_path: str, prompt: str = "", timeout: int = 60) -> str:
     r = requests.post(
         "https://router.huggingface.co/v1/chat/completions",
         headers={"Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}"},
-        json={"model": "google/gemma-3n-E4B-it", "max_tokens": 90,
+        json={"model": "google/gemma-3n-E4B-it", "max_tokens": max_tokens,
               "messages": [{"role": "user", "content": [
                   {"type": "text", "text": prompt or (
                       "This is the soundtrack of a short video clip. In one or two "

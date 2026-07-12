@@ -592,3 +592,13 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 /* "Gemma hears" soundtrack row */
 .heard{margin:10px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-dim);cursor:help}
 .heard-k{font-family:var(--mono);font-size:10px;color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-right:8px;white-space:nowrap}
+
+/* live captions over the source video */
+.video-wrap{position:relative}
+.livecap{
+  position:absolute;left:8px;right:8px;bottom:44px;
+  background:rgba(5,5,10,.72);color:#fff;border-radius:8px;
+  padding:7px 12px;font-size:12.5px;line-height:1.5;text-align:center;
+  pointer-events:none;backdrop-filter:blur(3px);
+}
+.livecap-note{margin-top:6px}

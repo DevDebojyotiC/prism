@@ -41,6 +41,7 @@ export default function Page() {
   const [translated, setTranslated] = useState(null);   // captions in `lang`, or null for English
   const [translating, setTranslating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [liveCap, setLiveCap] = useState("");
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
   const outRef = useRef(null);
@@ -125,6 +126,18 @@ export default function Page() {
   function reset() {
     setResult(null); setError(""); setVideoSrc(null); setFile(null); setUrl("");
     setPhase("input");
+  }
+
+  // live captions: reveal the transcript in sync with video playback. Timing is
+  // proportional (words spread evenly across the clip), honest for short clips.
+  function onTimeUpdate(e) {
+    const tr = result?.transcript;
+    const v = e.target;
+    if (!tr || !v?.duration) { return; }
+    const words = tr.split(/\s+/);
+    const upto = Math.floor(words.length * Math.min(1, v.currentTime / v.duration));
+    const WINDOW = 14;
+    setLiveCap(words.slice(Math.max(0, upto - WINDOW), upto).join(" "));
   }
 
   function speak(text) {
@@ -398,8 +411,19 @@ export default function Page() {
                 <div className="ev-sec">
                   <div className="ev-k">Source clip</div>
                   {videoSrc
-                    ? <video className="video-el" src={videoSrc} controls autoPlay muted loop playsInline />
+                    ? (
+                      <div className="video-wrap">
+                        <video className="video-el" src={videoSrc} controls autoPlay muted loop playsInline
+                               onTimeUpdate={onTimeUpdate} />
+                        {result.transcript && liveCap && (
+                          <div className="livecap" aria-live="off">{liveCap}</div>
+                        )}
+                      </div>
+                    )
                     : <div className="video-ph"><span className="fn">{sourceLabel}</span></div>}
+                  {result.transcript && (
+                    <p className="m-cap livecap-note">live captions: Gemma 3n transcript, timed to playback (approximate)</p>
+                  )}
                 </div>
                 <div className="ev-sec">
                   <div className="ev-k">What the model sees</div>

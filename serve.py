@@ -116,13 +116,17 @@ def _run(vid_path: str, workdir: str) -> dict:
                 pass
         # transcript: only surfaces when the clip actually contains speech
         try:
-            tr = gc.hear(wav, gc.TRANSCRIBE_PROMPT)
+            tr = gc.hear(wav, gc.TRANSCRIBE_PROMPT, max_tokens=512)
             words = tr.split()
             # degenerate-repetition guard: music beds sometimes "transcribe" as one
             # token repeated dozens of times; real speech has lexical variety
             degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
             if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
-                transcript = tr[:600]
+                transcript = tr
+                if len(transcript) > 900:  # trim at a sentence boundary, never mid-word
+                    cut = transcript[:900]
+                    dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+                    transcript = cut[:dot + 1] if dot > 200 else cut.rsplit(" ", 1)[0] + "…"
         except Exception:
             pass
 
