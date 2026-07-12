@@ -247,11 +247,7 @@ def tts(req: TTSReq):
     Gemma-family voice we found: none of the 35 Gemma-TTS models on the Hub has
     a serverless provider. The frontend falls back to the browser voice on any
     failure or quota exhaustion."""
-    txt = " ".join(req.text.split())
-    if len(txt) > 300:  # keep synthesis time sane; trim at a sentence boundary
-        cut = txt[:300]
-        dot = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
-        txt = cut[:dot + 1] if dot > 120 else cut.rsplit(" ", 1)[0]
+    txt = " ".join(req.text.split())[:400]  # client sends sentence-chunks; hard safety cap only
     t0 = time.time()
     try:
         from gradio_client import Client

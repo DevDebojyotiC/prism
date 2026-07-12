@@ -41,6 +41,7 @@ export default function Page() {
   const [translated, setTranslated] = useState(null);   // captions in `lang`, or null for English
   const [translating, setTranslating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [voiceLoading, setVoiceLoading] = useState(false);
   const [mTab, setMTab] = useState("desc");   // description | sound | transcript
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
@@ -129,11 +130,13 @@ export default function Page() {
   }
 
   const gemmaAudio = useRef(null);
+  const voiceRun = useRef(null);   // current playback session (for cancel)
 
   function stopSpeaking() {
+    if (voiceRun.current) voiceRun.current.aborted = true;
     window.speechSynthesis?.cancel();
     if (gemmaAudio.current) { gemmaAudio.current.pause(); gemmaAudio.current = null; }
-    setSpeaking(false);
+    setSpeaking(false); setVoiceLoading(false);
   }
 
   function browserSpeak(text) {
@@ -143,33 +146,72 @@ export default function Page() {
     u.rate = 1.05;
     u.onend = () => setSpeaking(false);
     u.onerror = () => setSpeaking(false);
+    setSpeaking(true);
     synth.speak(u);
   }
 
-  async function speak(text) {
-    if (speaking) { stopSpeaking(); return; }
-    setSpeaking(true);
-    // Gemma voice first: T5Gemma-TTS on a HF ZeroGPU Space (~20s to synthesize);
-    // browser voice covers failures and quota exhaustion
+  // pack sentences into ~260-char chunks the TTS Space can turn around quickly
+  function ttsChunks(text) {
+    const sentences = text.match(/[^.!?]+[.!?]+["']?\s*|[^.!?]+$/g) || [text];
+    const chunks = [];
+    let cur = "";
+    for (const s of sentences) {
+      if ((cur + s).length > 260 && cur) { chunks.push(cur.trim()); cur = s; }
+      else cur += s;
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+    return chunks;
+  }
+
+  async function fetchTTS(text) {
     try {
       const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 60000);
+      const timer = setTimeout(() => ctl.abort(), 90000);
       const r = await fetch("/api/tts", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }), signal: ctl.signal,
       });
       clearTimeout(timer);
       const d = await r.json();
-      if (d.audio) {
-        const a = new Audio(d.audio);
-        gemmaAudio.current = a;
-        a.onended = () => { gemmaAudio.current = null; setSpeaking(false); };
-        a.onerror = () => { gemmaAudio.current = null; setSpeaking(false); };
-        await a.play();
+      return d.audio || null;
+    } catch { return null; }
+  }
+
+  function playUri(uri) {
+    return new Promise((res) => {
+      const a = new Audio(uri);
+      gemmaAudio.current = a;
+      a.onended = () => { gemmaAudio.current = null; res(); };
+      a.onerror = () => { gemmaAudio.current = null; res(); };
+      a.play().catch(res);
+    });
+  }
+
+  // Gemma voice, pipelined: synthesize chunk 1, play it while chunk 2 renders in
+  // the background, and so on. Browser voice takes over the REMAINING text if
+  // any chunk fails (quota, Space asleep, network).
+  async function speak(text) {
+    if (speaking || voiceLoading) { stopSpeaking(); return; }
+    const run = { aborted: false };
+    voiceRun.current = run;
+    const chunks = ttsChunks(text);
+    setVoiceLoading(true);
+    let audio = await fetchTTS(chunks[0]);
+    if (run.aborted) return;
+    setVoiceLoading(false);
+    if (!audio) { browserSpeak(text); return; }
+    setSpeaking(true);
+    for (let i = 0; audio && !run.aborted; i++) {
+      const nextP = i + 1 < chunks.length ? fetchTTS(chunks[i + 1]) : null;
+      await playUri(audio);
+      if (run.aborted) return;
+      audio = nextP ? await nextP : null;
+      if (nextP && !audio && !run.aborted) {   // mid-stream failure: finish via browser
+        browserSpeak(chunks.slice(i + 1).join(" "));
         return;
       }
-    } catch {}
-    browserSpeak(text);
+    }
+    if (!run.aborted) setSpeaking(false);
   }
 
   async function changeLang(l) {
@@ -466,13 +508,13 @@ export default function Page() {
                         <button role="tab" aria-selected={mTab === "transcript"} onClick={() => setMTab("transcript")}>Transcript</button>
                       )}
                     </div>
-                    <button className={"listen" + (speaking ? " on" : "")}
-                            onClick={() => speak(mTab === "sound" ? result.heard
-                                              : mTab === "transcript" ? result.transcript
-                                              : result.description)}
-                            title="Read this panel aloud. Voice: T5Gemma-TTS (a community TTS built on Google's T5Gemma weights) via a HF ZeroGPU Space, ~20s to synthesize; your browser's voice covers failures.">
-                      {speaking ? "stop" : "listen"}
-                    </button>
+                    {mTab === "desc" && (
+                      <button className={"listen" + (speaking ? " on" : "") + (voiceLoading ? " load" : "")}
+                              onClick={() => speak(result.description)}
+                              title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights) on a HF ZeroGPU Space. First audio takes ~20s; your browser's voice covers failures.">
+                        {voiceLoading ? "synthesizing" : speaking ? "stop" : "listen"}
+                      </button>
+                    )}
                   </div>
                   {mTab === "desc" && (
                     <>
