@@ -146,6 +146,64 @@ def _b64_image(path: str) -> str:
         return base64.b64encode(f.read()).decode("ascii")
 
 
+# ── Kimi grounding (Fireworks serverless) ────────────────────────────────────
+# The top Track-2 teams (incl. the #1 Gemma-prize contender) ground with a
+# frontier VLM and keep Gemma as the language/styling brain. Kimi-k2p6 accepts
+# 8+ images per call (Fireworks' payload cap is far above HF's ~5) and reads
+# fine detail Gemma-4's vision encoder misses. Styling stays 100% Gemma.
+KIMI_MODELS = ("accounts/fireworks/models/kimi-k2p6",
+               "accounts/fireworks/models/kimi-k2p5")
+
+
+def kimi_available() -> bool:
+    return bool(os.environ.get("FIREWORKS_API_KEY", ""))
+
+
+def kimi_describe(frame_paths: List[str], prompt: str,
+                  max_tokens: int = 600, timeout: int = 60) -> str:
+    """One Kimi vision call over individual frames. Raises on total failure so the
+    caller can fall back to the pure-Gemma path."""
+    key = os.environ.get("FIREWORKS_API_KEY", "")
+    if not key:
+        raise RuntimeError("no FIREWORKS_API_KEY for Kimi grounding")
+    content = [{"type": "text", "text": prompt}]
+    for p in frame_paths:
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{_b64_image(p)}"}})
+    global LAST_BACKEND
+    last = None
+    for model in KIMI_MODELS:
+        for attempt in range(len(_BACKOFF) + 1):
+            try:
+                r = requests.post(
+                    "https://api.fireworks.ai/inference/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {key}",
+                             "Content-Type": "application/json"},
+                    json={"model": model, "max_tokens": max_tokens,
+                          "temperature": 0.3, "reasoning_effort": "none",
+                          "messages": [{"role": "user", "content": content}]},
+                    timeout=timeout,
+                )
+                r.raise_for_status()
+                msg = r.json()["choices"][0]["message"]
+                out = (msg.get("content") or "").strip()
+                # Kimi is a reasoning model — strip any leaked thinking trace
+                if "</think>" in out:
+                    out = out.split("</think>", 1)[1].strip()
+                if out:
+                    LAST_BACKEND = "kimi"
+                    return out
+                last = RuntimeError(f"{model} returned empty")
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if _is_transient(e) and attempt < len(_BACKOFF):
+                    time.sleep(_BACKOFF[attempt])
+                    continue
+                break
+    raise RuntimeError(f"kimi grounding failed: {last}")
+
+
 def vision_describe(frame_paths: List[str], prompt: str,
                     max_tokens: int = 400, timeout: int = 120) -> str:
     content = [{"type": "text", "text": prompt}]

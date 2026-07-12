@@ -59,8 +59,10 @@ def process_one(task: dict, workdir: str) -> dict:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
 
-    # a few high-res individual frames beat a low-res montage for a Gemma VLM
-    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else 5
+    # a few high-res individual frames beat a low-res montage; Kimi takes 8 in
+    # one call (Fireworks payload cap is far above the HF endpoint's ~5)
+    default_n = 8 if gc.kimi_available() else 5
+    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
     if USE_AUDIO:
@@ -73,7 +75,9 @@ def process_one(task: dict, workdir: str) -> dict:
         return _fallback_captions(styles, "A short video clip.")
 
     description = caption.ground(frames, transcript)
-    if USE_VERIFY:
+    # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
+    # weaker model second-guess it — DescribeX ships no verify at all
+    if USE_VERIFY and gc.LAST_BACKEND != "kimi":
         description = caption.verify(frames, description)
     return caption.stylize(description, styles)
 

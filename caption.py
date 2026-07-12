@@ -42,16 +42,23 @@ _GROUND_PROMPT = (
     "4-6 detailed sentences (roughly 150-250 words)."
 )
 
-# managed vision endpoints cap a request at ~5 images; send the highest-detail
-# individual frames rather than a low-res montage.
+# the HF Gemma endpoint caps a request at ~5 images; Kimi on Fireworks takes 8+.
 _MAX_IMAGES = 5
+_KIMI_IMAGES = 8
 
 
 def ground(frame_paths: List[str], transcript: str = "",
            montage_out: Optional[str] = None) -> str:
+    """Grounding: Kimi (frontier vision, 8 frames) when configured, else Gemma
+    (5 frames). Styling downstream is always Gemma — Kimi only reports facts."""
     prompt = _GROUND_PROMPT
     if transcript:
         prompt += f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
+    if gc.kimi_available():
+        try:
+            return gc.kimi_describe(frame_paths[:_KIMI_IMAGES], prompt, max_tokens=600)
+        except Exception:
+            pass  # fall through to the pure-Gemma path
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=600)
 
 
