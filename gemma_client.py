@@ -53,6 +53,23 @@ def _backends() -> List[Backend]:
     )
     if hf.usable:
         out.append(hf)
+    # same model, same token, DIFFERENT hosts: the HF router lets us pin a
+    # provider with a "model:provider" suffix. Under deadline-hour congestion the
+    # router's default (novita) throws 429s while other hosts answer instantly,
+    # so these give Gemma styling real failover without leaving Gemma.
+    for suffix in os.environ.get(
+            "HF_GEMMA_PROVIDERS", "cerebras,together,deepinfra").split(","):
+        suffix = suffix.strip()
+        if not suffix or not hf.usable:
+            continue
+        out.append(Backend(
+            name=f"hf-{suffix}",
+            base_url=hf.base_url,
+            model=f"{hf.model}:{suffix}",
+            api_key=hf.api_key,
+            disable_thinking=True,
+            timeout=hf.timeout,
+        ))
     # 2) FALLBACK 1: Fireworks Gemma-4 (our deployment).
     fw = Backend(
         name="fireworks",
@@ -105,7 +122,7 @@ def _post_chat(b: Backend, messages: list, max_tokens: int, temperature: float,
 # Transient HTTP statuses worth retrying (rate limit / gateway / overload).
 # 402 (payment) and 4xx like 400/401/413 are NOT transient; fail over instead.
 _TRANSIENT_STATUS = {429, 500, 502, 503, 504}
-_BACKOFF = (1.0, 3.0)  # sleeps between attempts; total <30s/request budget
+_BACKOFF = (1.0,)  # one quick retry, then hop backends; with four Gemma hosts, failover beats waiting
 
 
 def _is_transient(e: Exception) -> bool:
