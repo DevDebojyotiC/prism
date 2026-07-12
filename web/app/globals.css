@@ -397,7 +397,7 @@ body[data-state="results"] .io{display:none}
 .ev-sec:last-child{border-bottom:0}
 .ev-k{
   display:flex;align-items:center;gap:10px;
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);
+  font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);
   margin-bottom:10px;
 }
 .ev-k::after{content:"";flex:1;height:1px;background:var(--line)}
@@ -420,8 +420,8 @@ body[data-state="results"] .io{display:none}
   animation:scan 4.5s ease-in-out infinite;
 }
 @keyframes scan{0%{background-position:0 -40%}55%,100%{background-position:0 140%}}
-.m-cap{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:9px;line-height:1.55}
-.m-cap b{color:var(--ink-dim);font-weight:600}
+.m-cap{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-top:9px;line-height:1.55}
+.m-cap b{color:var(--ink);font-weight:600}
 
 .desc{font-size:12.5px;color:var(--ink-dim);line-height:1.6}
 .ground .desc::first-letter{
@@ -553,7 +553,8 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 }
 .langsel:hover{border-color:var(--ink-faint)}
 .langsel:disabled{opacity:.5;cursor:wait}
-.langnote{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.langnote{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
+.langnote b{color:var(--ink);font-weight:600}
 
 /* ── judge Q&A ─────────────────────────────────────────────────────────────── */
 .faq{margin:72px 0 8px}
@@ -575,7 +576,7 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 
 /* fact-anchor chip (EmbeddingGemma consistency check) */
 .anchor{
-  font-family:var(--mono);font-size:10px;color:var(--ink-dim);
+  font-family:var(--mono);font-size:11px;color:var(--ink-dim);
   border:1px solid var(--line);border-radius:6px;padding:3px 7px;
   margin-right:8px;white-space:nowrap;cursor:help;
 }
@@ -594,19 +595,13 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 .heard-k{font-family:var(--mono);font-size:10px;color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-right:8px;white-space:nowrap}
 
 /* live captions over the source video */
-.video-wrap{position:relative}
-.livecap{
-  position:absolute;left:8px;right:8px;bottom:44px;
-  background:rgba(5,5,10,.72);color:#fff;border-radius:8px;
-  padding:7px 12px;font-size:12.5px;line-height:1.5;text-align:center;
-  pointer-events:none;backdrop-filter:blur(3px);
-}
-.livecap-note{margin-top:6px}
+
 
 /* mini tabs inside the intelligence card + panel footnote */
 .tabs.mini{padding:3px;border-radius:10px}
 .tabs.mini button{padding:5px 12px;font-size:11px}
 .tab-meta{
-  margin:10px 0 0;font-family:var(--mono);font-size:10px;
-  color:var(--ink-faint);letter-spacing:.02em;
+  margin:12px 0 0;font-family:var(--mono);font-size:12px;
+  color:var(--ink-dim);letter-spacing:.02em;line-height:1.6;
 }
+.tab-meta b{color:var(--ink);font-weight:600}

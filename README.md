@@ -124,6 +124,11 @@ the demo's fact-anchor check). The family has obvious next steps:
 - **Indic-language depth.** Navarasa (Telugu-LLM-Labs' Gemma fine-tune for Indic
   languages) shows where transcreation can go; Prism's selector already covers Hindi,
   Bengali, Telugu, and Tamil.
+- **Live word-synced captions (experimental, parked).** We prototyped subtitles
+  rendered over the source video in sync with playback, driven by timestamped
+  transcription. Utterance-level timing worked; word-level sync needs a
+  word-timestamp ASR, so the feature is parked until the Gemma family exposes
+  one. The transcript itself ships today in the demo's Transcript tab.
 - **A Gemma voice.** The demo's "listen" button uses the browser's speech engine
   today; the Gemma-family swap-in is T5Gemma-TTS (a community TTS built on Google's
   T5Gemma weights), following the same open pipeline pattern HF and Cerebras

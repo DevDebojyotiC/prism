@@ -41,7 +41,6 @@ export default function Page() {
   const [translated, setTranslated] = useState(null);   // captions in `lang`, or null for English
   const [translating, setTranslating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [liveCap, setLiveCap] = useState("");
   const [mTab, setMTab] = useState("desc");   // description | sound | transcript
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
@@ -127,23 +126,6 @@ export default function Page() {
   function reset() {
     setResult(null); setError(""); setVideoSrc(null); setFile(null); setUrl("");
     setPhase("input");
-  }
-
-  // live captions: each transcribed chunk carries its time window, so captions
-  // render only inside windows that contain speech (music/silence shows none),
-  // with words spread proportionally within their own window.
-  function onTimeUpdate(e) {
-    const segs = result?.transcript_segments;
-    const v = e.target;
-    if (!segs?.length || !v?.duration) { return; }
-    const now = v.currentTime;
-    const seg = segs.find((s) => now >= s.start && now < s.end);
-    if (!seg) { setLiveCap(""); return; }
-    const words = seg.text.split(/\s+/);
-    const frac = (now - seg.start) / (seg.end - seg.start);
-    const upto = Math.max(1, Math.floor(words.length * Math.min(1, frac * 1.15)));
-    const WINDOW = 14;
-    setLiveCap(words.slice(Math.max(0, upto - WINDOW), upto).join(" "));
   }
 
   function speak(text) {
@@ -417,19 +399,8 @@ export default function Page() {
                 <div className="ev-sec">
                   <div className="ev-k">Source clip</div>
                   {videoSrc
-                    ? (
-                      <div className="video-wrap">
-                        <video className="video-el" src={videoSrc} controls autoPlay muted loop playsInline
-                               onTimeUpdate={onTimeUpdate} />
-                        {result.transcript && liveCap && (
-                          <div className="livecap" aria-live="off">{liveCap}</div>
-                        )}
-                      </div>
-                    )
+                    ? <video className="video-el" src={videoSrc} controls autoPlay muted loop playsInline />
                     : <div className="video-ph"><span className="fn">{sourceLabel}</span></div>}
-                  {result.transcript && (
-                    <p className="m-cap livecap-note">live captions: Gemma 3n transcript, timed to playback (approximate)</p>
-                  )}
                 </div>
                 <div className="ev-sec">
                   <div className="ev-k">What the model sees</div>
@@ -474,19 +445,19 @@ export default function Page() {
                   {mTab === "desc" && (
                     <>
                       <p className="desc">{result.description}</p>
-                      <p className="tab-meta">grounded description · the facts all four captions are built from</p>
+                      <p className="tab-meta"><b>grounded description</b> · the facts all four captions are built from</p>
                     </>
                   )}
                   {mTab === "sound" && result.heard && (
                     <>
                       <p className="desc">{result.heard}</p>
-                      <p className="tab-meta">soundtrack heard by {result.audio_via || result.heard_via || "Gemma 3n"} · experimental, never graded fact</p>
+                      <p className="tab-meta">soundtrack heard by <b>{result.audio_via || result.heard_via || "Gemma 3n"}</b> · experimental, never graded fact</p>
                     </>
                   )}
                   {mTab === "transcript" && result.transcript && (
                     <>
                       <p className="desc">"{result.transcript}"</p>
-                      <p className="tab-meta">speech transcribed by {result.transcript_via || result.audio_via || "Gemma 3n"} · appears only when the clip contains speech · drives the live captions on the source video</p>
+                      <p className="tab-meta">speech transcribed by <b>{result.transcript_via || result.audio_via || "Gemma 3n"}</b> · appears only when the clip contains speech</p>
                     </>
                   )}
                 </div>
@@ -499,8 +470,8 @@ export default function Page() {
                   </select>
                   <span className="langnote">
                     {translating ? "Gemma is transcreating…"
-                      : lang !== "English" ? `tone preserved in ${lang}, by Gemma-4`
-                      : "Gemma speaks 140+ languages. Try one"}
+                      : lang !== "English" ? <>tone preserved in <b>{lang}</b>, by Gemma-4</>
+                      : <>Gemma speaks <b>140+ languages</b>. Try one</>}
                   </span>
                 </div>
                 <div className="voices" style={translating ? { opacity: 0.45 } : undefined}>

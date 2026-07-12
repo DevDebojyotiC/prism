@@ -91,7 +91,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
-    heard, heard_via, transcript, transcript_segments = "", "", "", []
+    heard, heard_via, transcript = "", "", ""
     transcript_via = ""
     audio_via = {"v": ""}  # which engine actually served audio this run
 
@@ -131,46 +131,16 @@ def _run(vid_path: str, workdir: str) -> dict:
                 heard_via = audio_via["v"]
             except Exception:
                 pass
-        # transcript, timestamp-first: ask the audio model for [M:SS]-stamped
-        # utterances over the WHOLE file (real timing, so live captions match the
-        # voice). Falls back to the chunked pipeline below if stamps don't parse.
-        if not transcript_segments:
-            try:
-                import re as _re
-                raw = gc.gemini_hear(wav, gc.TS_TRANSCRIBE_PROMPT, max_tokens=2000)
-                transcript_via = "Gemini (timestamped)"
-                if "NO_SPEECH" not in raw.upper():
-                    adur = video.probe_duration(wav)
-                    hits = _re.findall(r"\[(\d{1,2}):(\d{2})\]\s*([^\[]+)", raw)
-                    segs_ts = []
-                    for m, s, txt in hits:
-                        st = int(m) * 60 + int(s)
-                        txt = " ".join(txt.split())
-                        if txt and (adur <= 0 or st < adur):
-                            segs_ts.append({"start": float(st), "text": txt})
-                    for i, seg in enumerate(segs_ts):
-                        nxt = segs_ts[i + 1]["start"] if i + 1 < len(segs_ts) else seg["start"] + 8
-                        if adur > 0:
-                            nxt = min(nxt, adur)
-                        seg["end"] = round(nxt, 1)
-                    segs_ts = [s for s in segs_ts if s["end"] > s["start"]]
-                    if segs_ts:
-                        transcript_segments = segs_ts
-                        transcript = " ".join(s["text"] for s in segs_ts)
-            except Exception:
-                pass
-
-        # fallback: chunked pipeline (Gemma 3n's audio encoder ingests ~30s per
-        # input, so chunk into segments, transcribe in parallel, sliver-refine)
-        if not transcript_segments:
-          try:
+        # transcript: Gemma 3n first (chunked; its audio encoder ingests ~30s
+        # per input), Gemini only when a Gemma call errors. Word-synced live
+        # captions were prototyped and parked as experimental (see roadmap).
+        try:
             import subprocess as _sp
             from concurrent.futures import ThreadPoolExecutor as _TPE
-            SEG_SECS = 14  # finer chunks = tighter live-caption alignment
             seg_pat = os.path.join(workdir, "seg_%02d.wav")
-            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", str(SEG_SECS),
+            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", "28",
                      "-ac", "1", "-ar", "16000", seg_pat], capture_output=True, timeout=60)
-            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:10]
+            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:6]
             segs = [os.path.join(workdir, p) for p in segs] or [wav]
 
             def _tr_one(p):
@@ -182,68 +152,21 @@ def _run(vid_path: str, workdir: str) -> dict:
             with _TPE(max_workers=len(segs)) as ex:
                 parts = list(ex.map(_tr_one, segs))
             keep = []
-            for i, tr in enumerate(parts):
+            for tr in parts:
                 words = tr.split()
                 # degenerate-repetition guard: music beds sometimes "transcribe" as
                 # one token repeated dozens of times; real speech has variety
                 degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
                 if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
-                    keep.append({"start": i * SEG_SECS, "end": (i + 1) * SEG_SECS,
-                                 "text": tr.strip()})
-            # refine run boundaries: a 14s chunk only says "speech somewhere in
-            # here", so probe 2s slivers (parallel) to find where speech actually
-            # starts/ends inside the first and last chunk of each contiguous run —
-            # otherwise captions open on the music that precedes the first word
-            def _sliver_speech(t0, t1):
-                out = {}
-                def _one(s):
-                    p = os.path.join(workdir, f"sl_{s:.0f}.wav")
-                    _sp.run(["ffmpeg", "-y", "-ss", str(s), "-t", "2", "-i", wav,
-                             "-ac", "1", "-ar", "16000", p], capture_output=True, timeout=20)
-                    try:
-                        tr = _hear_any(p, gc.TRANSCRIBE_PROMPT, max_tokens=40)
-                        return s, "NO_SPEECH" not in tr.upper() and len(tr.split()) >= 1
-                    except Exception:
-                        return s, True  # on probe failure, assume speech (fail open)
-                pts = [t0 + 2 * k for k in range(int((t1 - t0) / 2))]
-                with _TPE(max_workers=min(8, max(1, len(pts)))) as ex2:
-                    for s, has in ex2.map(_one, pts):
-                        out[s] = has
-                return out
-
-            if keep:
-                # group consecutive chunks into runs, refine each run's edges
-                runs, cur = [], [keep[0]]
-                for seg in keep[1:]:
-                    if seg["start"] == cur[-1]["end"]:
-                        cur.append(seg)
-                    else:
-                        runs.append(cur); cur = [seg]
-                runs.append(cur)
-                for run in runs:
-                    first, last = run[0], run[-1]
-                    sl = _sliver_speech(first["start"], first["end"])
-                    for s in sorted(sl):
-                        if sl[s]:
-                            first["start"] = s
-                            break
-                    sl = _sliver_speech(last["start"], last["end"]) if last is not first else sl
-                    for s in sorted(sl, reverse=True):
-                        if sl[s]:
-                            last["end"] = min(last["end"], s + 2)
-                            break
-            adur = video.probe_duration(wav)
-            if adur > 0:  # never let a window outrun the actual audio
-                for seg in keep:
-                    seg["end"] = min(seg["end"], round(adur, 1))
-            transcript_segments = keep  # speech windows, edges refined to ~2s
-            transcript = " ".join(k["text"] for k in keep)
-            transcript_via = transcript_via or audio_via["v"] or "Gemma 3n"
+                    keep.append(tr.strip())
+            transcript = " ".join(keep)
             if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
                 cut = transcript[:1400]
                 dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
                 transcript = cut[:dot + 1] if dot > 300 else cut.rsplit(" ", 1)[0] + "…"
-          except Exception:
+            if transcript:
+                transcript_via = audio_via["v"] or "Gemma 3n"
+        except Exception:
             pass
 
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
@@ -255,7 +178,6 @@ def _run(vid_path: str, workdir: str) -> dict:
         "audio_via": audio_via["v"],
         "transcript": transcript,
         "transcript_via": transcript_via,
-        "transcript_segments": transcript_segments,
         "description": description,
         "title": title,
         "montage": montage_uri,
