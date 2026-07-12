@@ -139,7 +139,7 @@ the demo's fact-anchor check). The family has obvious next steps:
 
 ## Notes
 - **Graded submission images:** `v10-scored` tag = the 0.87 run (quick 8-frame
-  grounding). `v18` = the final submission: up to 16 individual stills to the
+  grounding). `v19` = the final submission: a download-time frame ladder (16/12/8/6 stills) feeding the
   grounding race when the download was fast, a three-way parallel grounding
   race (Kimi, then Qwen3-VL-235B, then Gemma, ranked by a measured benchmark
   on the public validation clips), speech-aware grounding on a budget gate,
