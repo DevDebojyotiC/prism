@@ -41,6 +41,20 @@ class LinkReq(BaseModel):
     video_url: str
 
 
+class TranslateReq(BaseModel):
+    captions: dict
+    language: str
+
+
+# demo language selector — Gemma-4 covers 140+ languages; this is a showcase
+# list, not a limit
+LANGUAGES = [
+    "English", "Hindi", "Bengali", "Tamil", "Spanish", "French", "German",
+    "Portuguese", "Italian", "Japanese", "Korean", "Chinese (Simplified)",
+    "Arabic", "Indonesian", "Turkish", "Swahili",
+]
+
+
 def _b64_jpeg(path: str) -> str:
     with open(path, "rb") as f:
         return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii")
@@ -49,14 +63,17 @@ def _b64_jpeg(path: str) -> str:
 def _run(vid_path: str, workdir: str) -> dict:
     t0 = time.time()
     frames_dir = os.path.join(workdir, "frames")
-    dur = video.probe_duration(vid_path)
-    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else video.frames_for_duration(dur)
+    default_n = 8 if gc.kimi_available() else 5
+    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid_path, frames_dir, n_frames=n_frames)
+    # the pipeline no longer needs a montage (individual high-res frames go to the
+    # model) — build one purely for the demo's visual strip
     montage_path = os.path.join(workdir, "montage.jpg")
+    video.make_montage(frames, montage_path)
     t_frames = time.time() - t0
 
     t1 = time.time()
-    description = caption.ground(frames, montage_out=montage_path)
+    description = caption.ground(frames)
     t_ground = time.time() - t1
 
     t2 = time.time()
@@ -85,7 +102,22 @@ def _run(vid_path: str, workdir: str) -> dict:
 
 @app.get("/api/samples")
 def samples():
-    return {"samples": SAMPLES, "styles": STYLE_ORDER}
+    return {"samples": SAMPLES, "styles": STYLE_ORDER, "languages": LANGUAGES}
+
+
+@app.post("/api/translate")
+def translate(req: TranslateReq):
+    """Transcreate the four captions into the chosen language (Gemma, one call).
+    Tone must survive the language switch — that's the showcase."""
+    if req.language.lower().startswith("english"):
+        return {"captions": req.captions, "language": "English"}
+    t0 = time.time()
+    try:
+        out = caption.translate_captions(req.captions, req.language)
+    except Exception as e:
+        return {"error": f"translation failed: {e}"}
+    return {"captions": out, "language": req.language,
+            "backend": gc.LAST_BACKEND, "seconds": round(time.time() - t0, 2)}
 
 
 @app.post("/api/caption/link")

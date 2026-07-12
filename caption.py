@@ -142,6 +142,32 @@ def _parse(raw: str, styles: List[str], fallback: str) -> dict:
     return out
 
 
+def translate_captions(captions: dict, language: str) -> dict:
+    """Demo-only: transcreate the four captions into another language with Gemma.
+    Not translation — TRANSCREATION: each caption must keep its style's voice
+    (sarcasm stays dry, the tech pun still lands, formal stays formal). Showcases
+    Gemma's multilingual tone control; never part of the graded output."""
+    keys = ", ".join(f'"{k}"' for k in captions)
+    block = "\n".join(f"{k}: {v}" for k, v in captions.items())
+    user = (
+        f"Transcreate each of these video captions into {language}. Do NOT translate "
+        f"word-for-word — rewrite each one the way a native {language} copywriter "
+        f"would, PRESERVING its style: 'formal' stays professional and precise, "
+        f"'sarcastic' stays dry and ironic, 'humorous_tech' keeps a tech joke that "
+        f"lands in {language}, 'humorous_non_tech' keeps everyday humor with no tech "
+        f"jargon. Keep proper nouns and readable on-screen text as-is. Keep each "
+        f"caption about the same length as the original.\n\n{block}\n\n"
+        f"Return ONLY a JSON object with exactly these keys: {keys} — each value the "
+        f"{language} caption. No extra text."
+    )
+    raw = gc.chat([{"role": "user", "content": user}],
+                  max_tokens=900, temperature=0.6,
+                  response_format={"type": "json_object"})
+    out = _parse(raw, list(captions.keys()), "")
+    # any style that failed to translate falls back to its original
+    return {k: (v if v else captions[k]) for k, v in out.items()}
+
+
 def make_title(description: str) -> str:
     """A short, human-readable video name derived from the description (demo UI
     only — not part of the graded caption output)."""

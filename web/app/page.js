@@ -36,6 +36,10 @@ export default function Page() {
   const [loadStage, setLoadStage] = useState(0);
   const [progress, setProgress] = useState(0);
   const [copied, setCopied] = useState(null);
+  const [languages, setLanguages] = useState(["English"]);
+  const [lang, setLang] = useState("English");
+  const [translated, setTranslated] = useState(null);   // captions in `lang`, or null for English
+  const [translating, setTranslating] = useState(false);
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
   const outRef = useRef(null);
@@ -77,7 +81,9 @@ export default function Page() {
   }, [phase]);
 
   useEffect(() => {
-    fetch("/api/samples").then((r) => r.json()).then((d) => setSamples(d.samples || [])).catch(() => {});
+    fetch("/api/samples").then((r) => r.json())
+      .then((d) => { setSamples(d.samples || []); setLanguages(d.languages || ["English"]); })
+      .catch(() => {});
   }, []);
 
   // Cosmetic staged progress while the real request is in flight.
@@ -120,8 +126,24 @@ export default function Page() {
     setPhase("input");
   }
 
+  async function changeLang(l) {
+    setLang(l);
+    if (l === "English" || !result?.captions) { setTranslated(null); return; }
+    setTranslating(true);
+    try {
+      const r = await fetch("/api/translate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captions: result.captions, language: l }),
+      });
+      const d = await r.json();
+      setTranslated(d.captions || null);
+    } catch { setTranslated(null); setLang("English"); }
+    setTranslating(false);
+  }
+
   async function run(promise, label) {
-    setError(""); setResult(null); setSourceLabel(label || ""); setPhase("loading");
+    setError(""); setResult(null); setTranslated(null); setLang("English");
+    setSourceLabel(label || ""); setPhase("loading");
     try {
       const res = await promise;
       const data = await res.json();
@@ -366,12 +388,12 @@ export default function Page() {
                     : <div className="video-ph"><span className="fn">{sourceLabel}</span></div>}
                 </div>
                 <div className="ev-sec">
-                  <div className="ev-k">What Gemma-4 sees</div>
+                  <div className="ev-k">What the model sees</div>
                   <div className="montage">
                     {result.montage && <img className="montage-img" src={result.montage} alt="frame montage" />}
                     <div className="scan" />
                   </div>
-                  <p className="m-cap"><b>{result.frame_count} frames, one image.</b> Read left→right, top→bottom in time — this exact montage is the only thing the model receives.</p>
+                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here) — sent to the vision model at full resolution, in time order.</p>
                 </div>
               </aside>
 
@@ -387,21 +409,34 @@ export default function Page() {
                       <span>{sourceLabel}</span>
                     </div>
                   )}
-                  <div className="ev-k gk">Grounded description · what Gemma-4 understood</div>
+                  <div className="ev-k gk">Grounded description · the facts all four captions are built from</div>
                   <p className="desc">{result.description}</p>
                 </div>
-                <div className="voices">
+                <div className="langbar">
+                  <span className="ev-k">Four voices</span>
+                  <select className="langsel" value={lang} disabled={translating}
+                          onChange={(e) => changeLang(e.target.value)}
+                          aria-label="Caption language">
+                    {languages.map((l) => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <span className="langnote">
+                    {translating ? "Gemma is transcreating…"
+                      : lang !== "English" ? `tone preserved in ${lang} — by Gemma-4`
+                      : "Gemma speaks 140+ languages — try one"}
+                  </span>
+                </div>
+                <div className="voices" style={translating ? { opacity: 0.45 } : undefined}>
                   {STYLES.map((st) => (
                     <article key={st.key} className="voice" style={{ "--c": `var(${st.cvar})`, "--d": st.d }}>
                       <div className="v-head">
                         <span className="lam">{st.lam}</span>
                         <div><div className="v-name">{st.name}</div><span className="v-sub">{st.sub}</span></div>
                         <button className={"copy" + (copied === st.key ? " ok" : "")}
-                                onClick={() => copy(st.key, result.captions?.[st.key])}>
+                                onClick={() => copy(st.key, (translated || result.captions)?.[st.key])}>
                           {copied === st.key ? "✓ copied" : "copy"}
                         </button>
                       </div>
-                      <p className="v-text">{result.captions?.[st.key]}</p>
+                      <p className="v-text">{(translated || result.captions)?.[st.key]}</p>
                     </article>
                   ))}
                 </div>
@@ -420,7 +455,7 @@ export default function Page() {
 
         <footer>
           <div className="rule" />
-          <p>Prism · AMD Developer Hackathon ACT II · Track 2 · Gemma-4 vision + style</p>
+          <p>Prism · AMD Developer Hackathon ACT II · Track 2 · every caption authored by Gemma-4</p>
         </footer>
       </main>
     </>
