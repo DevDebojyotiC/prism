@@ -3,3 +3,4 @@ Pillow
 python-dotenv
 fastapi
 uvicorn
+gradio_client

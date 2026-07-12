@@ -59,10 +59,14 @@ def process_one(task: dict, workdir: str) -> dict:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
 
-    # a few high-res individual frames beat a low-res montage; Kimi takes 16 in
-    # one call (Fireworks' payload cap is far above the HF endpoint's ~5 images),
-    # and denser coverage gives the grounding more specific temporal detail
-    default_n = 25 if gc.kimi_available() else 5
+    # a few high-res individual frames beat a low-res montage; Kimi takes 8 in
+    # one call (Fireworks' payload cap is far above the HF endpoint's ~5 images).
+    # PRISM_FLOW=1 switches the Kimi path to the experimental flow-montage
+    # grounding (25 frames: one hi-res montage + 15 stills): richer temporal
+    # detail, but too slow for the graded 30s/clip budget on 4K, so OFF by
+    # default; the graded image behavior stays exactly v10's
+    use_flow = os.environ.get("PRISM_FLOW", "0").strip().lower() in {"1", "true", "yes"}
+    default_n = (25 if use_flow else 8) if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
