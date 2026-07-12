@@ -29,6 +29,9 @@ USE_AUDIO = os.environ.get("PRISM_AUDIO", "0").strip().lower() in {"1", "true", 
 # second-look pass: re-check the grounding against the frames and add what changes
 # over time (the full-video judge sees motion our static montage can under-describe)
 USE_VERIFY = os.environ.get("PRISM_VERIFY", "1").strip().lower() in {"1", "true", "yes"}
+# PRISM_STT=1: transcribe the clip's speech (Gemma 3n, Gemini on error) on a side
+# thread and feed it to the grounding stage; hard-capped so it can't cost >10s
+USE_STT = os.environ.get("PRISM_STT", "0").strip().lower() in {"1", "true", "yes"}
 
 
 # When the pipeline fails outright (no description to ground from), emit four
@@ -53,11 +56,23 @@ def process_one(task: dict, workdir: str) -> dict:
 
     vid = os.path.join(workdir, f"{tid}.mp4")
     frames_dir = os.path.join(workdir, f"{tid}_frames")
+    t_dl = time.time()
     try:
         video.download_video(url, vid)
     except Exception as e:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
+    dl_secs = time.time() - t_dl
+
+    # speech transcript on a side thread, overlapped with frame extraction; the
+    # grounding waits at most a few seconds for it and proceeds without it
+    stt_future = None
+    if USE_STT:
+        from concurrent.futures import ThreadPoolExecutor
+        import audio_intel
+        _stt_pool = ThreadPoolExecutor(max_workers=1)
+        stt_future = _stt_pool.submit(audio_intel.clip_transcript, vid, workdir)
+        _stt_pool.shutdown(wait=False)
 
     # a few high-res individual frames beat a low-res montage; Kimi takes 8 in
     # one call (Fireworks' payload cap is far above the HF endpoint's ~5 images).
@@ -66,6 +81,10 @@ def process_one(task: dict, workdir: str) -> dict:
     # detail, but too slow for the graded 30s/clip budget on 4K, so OFF by
     # default; the graded image behavior stays exactly v10's
     use_flow = os.environ.get("PRISM_FLOW", "0").strip().lower() in {"1", "true", "yes"}
+    if use_flow and dl_secs > 12:
+        # slow (usually 4K) download already ate the budget: degrade to the quick
+        # 8-frame grounding so the clip stays inside the 30s cap
+        use_flow = False
     default_n = (25 if use_flow else 8) if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
@@ -79,6 +98,13 @@ def process_one(task: dict, workdir: str) -> dict:
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
+    if stt_future is not None:
+        try:
+            stt_text = stt_future.result(timeout=10)  # hard cap; never stalls a clip
+            if stt_text:
+                transcript = (transcript + " " + stt_text).strip() if transcript else stt_text
+        except Exception:
+            pass
     description = caption.ground(frames, transcript)
     # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
     # weaker model second-guess it
