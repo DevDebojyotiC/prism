@@ -141,9 +141,10 @@ def process_one(task: dict, workdir: str) -> dict:
         step = max(1, len(frames) // 4)
         description = caption.ground(frames[::step][:4], transcript,
                                      deadline=max(clip_deadline + 2, time.time() + 5))
-    # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
-    # weaker model second-guess it
-    if USE_VERIFY and gc.LAST_BACKEND != "kimi" and left() > 12:
+    # verify is a Gemma pass for pure-Gemma builds; when Kimi grounds (any
+    # build with a Fireworks key), don't let the weaker model second-guess it
+    # (the hedge thread can stomp LAST_BACKEND, so gate on the key instead)
+    if USE_VERIFY and not gc.kimi_available() and left() > 12:
         try:
             description = caption.verify(frames, description)
         except Exception:

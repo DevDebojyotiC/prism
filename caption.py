@@ -85,35 +85,57 @@ def ground(frame_paths: List[str], transcript: str = "",
                         max_tokens=600, deadline=_t.time() + rem - 7)
             except Exception:
                 pass  # fall through to the quick grounding
-        # stage 2: quick grounding, at most 8 stills (small payload, fast)
+        # stage 2: quick grounding, HEDGED. Kimi (small payload) and pure-Gemma
+        # vision grounding race in parallel: Kimi wins when it answers (better
+        # perception), and the Gemma answer is already in hand the moment Kimi
+        # dies, instead of starting from zero on an exhausted clock. Sequential
+        # fallbacks were the v14/v15 fallback factory: each rung inherited an
+        # empty budget.
+        rem2 = (deadline - _t.time()) if deadline else 60.0
+        n = len(frame_paths)
+        k = 8 if rem2 >= 14 else (6 if rem2 >= 9 else 4)
+        if n > k:
+            idxs = sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
+            picks = [frame_paths[i] for i in idxs]
+        else:
+            picks = list(frame_paths)
+        if rem2 < 14:
+            # tight window: re-encode small (640px q70) so the payload
+            # uploads in ~1s even on a congested link
+            from PIL import Image
+            small = []
+            for p in picks:
+                try:
+                    im = Image.open(p).convert("RGB")
+                    im.thumbnail((640, 640))
+                    sp = p + ".sm.jpg"
+                    im.save(sp, "JPEG", quality=70)
+                    small.append(sp)
+                except Exception:
+                    small.append(p)
+            picks = small
+        from concurrent.futures import ThreadPoolExecutor
+        ex = ThreadPoolExecutor(max_workers=2)
+        f_kimi = ex.submit(gc.kimi_describe, picks, _GROUND_PROMPT + extra,
+                           600, 60, deadline)
+        f_gemma = ex.submit(gc.vision_describe, picks[:_MAX_IMAGES],
+                            _GROUND_PROMPT + extra, 600, 120, deadline)
+        ex.shutdown(wait=False)
         try:
-            rem2 = (deadline - _t.time()) if deadline else 60.0
-            n = len(frame_paths)
-            k = 8 if rem2 >= 14 else (6 if rem2 >= 9 else 4)
-            if n > k:
-                idxs = sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
-                picks = [frame_paths[i] for i in idxs]
-            else:
-                picks = list(frame_paths)
-            if rem2 < 14:
-                # tight window: re-encode small (640px q70) so the payload
-                # uploads in ~1s even on a congested link
-                from PIL import Image
-                small = []
-                for p in picks:
-                    try:
-                        im = Image.open(p).convert("RGB")
-                        im.thumbnail((640, 640))
-                        sp = p + ".sm.jpg"
-                        im.save(sp, "JPEG", quality=70)
-                        small.append(sp)
-                    except Exception:
-                        small.append(p)
-                picks = small
-            return gc.kimi_describe(picks, _GROUND_PROMPT + extra,
-                                    max_tokens=600, deadline=deadline)
+            out = f_kimi.result()
+            if out:
+                gc.LAST_BACKEND = "kimi"  # the hedge thread may stomp it late
+                return out
         except Exception:
-            pass  # fall through to the pure-Gemma path
+            pass
+        try:
+            rem3 = max(2.0, (deadline - _t.time())) if deadline else 60.0
+            out = f_gemma.result(timeout=rem3)
+            if out:
+                return out
+        except Exception:
+            pass
+        raise RuntimeError("hedged grounding failed")
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra,
                               max_tokens=600, deadline=deadline)
 
