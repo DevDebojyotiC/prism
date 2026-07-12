@@ -114,27 +114,34 @@ def ground(frame_paths: List[str], transcript: str = "",
                 except Exception:
                     small.append(p)
             picks = small
+        # three-way race, preference by measured accuracy on the public
+        # validation clips: Kimi > Qwen3-VL-235B > Gemma. All fire at once, so
+        # a losing rung never inherits an exhausted clock; a weaker answer is
+        # only used when every stronger model has already failed.
         from concurrent.futures import ThreadPoolExecutor
-        ex = ThreadPoolExecutor(max_workers=2)
+        ex = ThreadPoolExecutor(max_workers=3)
         f_kimi = ex.submit(gc.kimi_describe, picks, _GROUND_PROMPT + extra,
                            600, 60, deadline)
+        f_qwen = ex.submit(gc.hedge_vlm_describe, picks[:_MAX_IMAGES],
+                           _GROUND_PROMPT + extra, 600, 45, deadline)
         f_gemma = ex.submit(gc.vision_describe, picks[:_MAX_IMAGES],
                             _GROUND_PROMPT + extra, 600, 120, deadline)
         ex.shutdown(wait=False)
         try:
             out = f_kimi.result()
             if out:
-                gc.LAST_BACKEND = "kimi"  # the hedge thread may stomp it late
+                gc.LAST_BACKEND = "kimi"  # the hedge threads may stomp it late
                 return out
         except Exception:
             pass
-        try:
-            rem3 = max(2.0, (deadline - _t.time())) if deadline else 60.0
-            out = f_gemma.result(timeout=rem3)
-            if out:
-                return out
-        except Exception:
-            pass
+        for fut in (f_qwen, f_gemma):
+            try:
+                rem3 = max(2.0, (deadline - _t.time())) if deadline else 60.0
+                out = fut.result(timeout=rem3)
+                if out:
+                    return out
+            except Exception:
+                pass
         raise RuntimeError("hedged grounding failed")
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra,
                               max_tokens=600, deadline=deadline)

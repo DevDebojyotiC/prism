@@ -185,8 +185,9 @@ def _b64_image(path: str) -> str:
 # frontier VLM and keep Gemma as the language/styling brain. Kimi-k2p6 accepts
 # 8+ images per call (Fireworks' payload cap is far above HF's ~5) and reads
 # fine detail Gemma-4's vision encoder misses. Styling stays 100% Gemma.
-KIMI_MODELS = ("accounts/fireworks/models/kimi-k2p6",
-               "accounts/fireworks/models/kimi-k2p5")
+# k2p5 was retired from Fireworks serverless (404 as of Jul 13); k2p6 is the
+# only vision model left in their serverless catalog
+KIMI_MODELS = ("accounts/fireworks/models/kimi-k2p6",)
 
 
 def kimi_available() -> bool:
@@ -249,6 +250,54 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                     continue
                 break
     raise RuntimeError(f"kimi grounding failed: {last}")
+
+
+# Second grounding rung (benchmarked on the 8 public validation clips):
+# Qwen3-VL-235B via the HF router ranked just under Kimi on accuracy and
+# richness (5.7s avg), clearly above the smaller VLMs. Same HF token.
+HEDGE_VLM = os.environ.get("PRISM_HEDGE_VLM", "Qwen/Qwen3-VL-235B-A22B-Instruct")
+
+
+def hedge_vlm_describe(frame_paths: List[str], prompt: str,
+                       max_tokens: int = 600, timeout: int = 45,
+                       deadline: Optional[float] = None) -> str:
+    """One vision call to the hedge VLM (HF router). Raises on failure."""
+    token = os.environ.get("HF_TOKEN", "")
+    if not token:
+        raise RuntimeError("no HF_TOKEN for the hedge VLM")
+    content = [{"type": "text", "text": prompt}]
+    for p in frame_paths:
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{_b64_image(p)}"}})
+    last = None
+    for attempt in range(2):
+        eff_timeout = float(timeout)
+        if deadline is not None:
+            remaining = deadline - time.time()
+            if remaining < 2:
+                raise last or RuntimeError("hedge VLM deadline exhausted")
+            eff_timeout = min(eff_timeout, remaining)
+        try:
+            r = requests.post(
+                "https://router.huggingface.co/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"model": HEDGE_VLM, "max_tokens": max_tokens,
+                      "temperature": 0.2,
+                      "messages": [{"role": "user", "content": content}]},
+                timeout=eff_timeout,
+            )
+            r.raise_for_status()
+            out = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            if "</think>" in out:
+                out = out.split("</think>", 1)[1].strip()
+            if out:
+                return out
+            last = RuntimeError("hedge VLM returned empty")
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if not _is_transient(e):
+                break
+    raise RuntimeError(f"hedge VLM failed: {last}")
 
 
 def vision_describe(frame_paths: List[str], prompt: str,
