@@ -58,15 +58,19 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
         def _grab(i):                          # fast input-seek, one frame each
             frac = i / (n_frames - 1) if n_frames > 1 else 0.5
             t = pad + span * frac
+            # -threads 1: ffmpeg's auto-threading spawns a full decode pool PER
+            # process; on the grader's 2 vCPUs six of those thrash (14.6s for
+            # 8 frames of 4K). One decode thread each, few workers: 4.5s.
             subprocess.run(
-                ["ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", path, "-frames:v", "1",
-                 "-vf", vf, "-q:v", "3", os.path.join(out_dir, f"f_{i:03d}.jpg")],
+                ["ffmpeg", "-y", "-threads", "1", "-ss", f"{t:.3f}", "-i", path,
+                 "-frames:v", "1", "-vf", vf, "-q:v", "3",
+                 os.path.join(out_dir, f"f_{i:03d}.jpg")],
                 capture_output=True, timeout=30,
             )
 
         # seeks are independent; parallelize (I/O + one-GOP decode each)
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(6, n_frames)) as ex:
+        with ThreadPoolExecutor(max_workers=min(3, n_frames)) as ex:
             list(ex.map(_grab, range(n_frames)))
     else:
         subprocess.run(

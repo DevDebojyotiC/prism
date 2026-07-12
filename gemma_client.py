@@ -145,7 +145,7 @@ def chat(messages: list, max_tokens: int = 512, temperature: float = 0.4,
         raise RuntimeError("no Gemma backend configured (set HF_TOKEN, or FIREWORKS_API_KEY+PRISM_FW_MODEL, or AMD_GEMMA_BASE_URL)")
     global LAST_BACKEND
     last = None
-    for b in backends:
+    for bi, b in enumerate(backends):
         # Retry transient errors on THIS backend before failing over to the next.
         for attempt in range(len(_BACKOFF) + 1):
             eff_timeout = timeout
@@ -154,6 +154,10 @@ def chat(messages: list, max_tokens: int = 512, temperature: float = 0.4,
                 if remaining < 2:
                     raise last or RuntimeError("chat deadline exhausted")
                 eff_timeout = min(timeout or remaining, remaining)
+                # leave later backends a real window (same rationale as kimi)
+                has_fallback = bi < len(backends) - 1 or attempt < len(_BACKOFF)
+                if has_fallback and remaining > 9:
+                    eff_timeout = min(eff_timeout, remaining - 4.5)
             try:
                 out = _post_chat(b, messages, max_tokens, temperature,
                                  response_format, timeout=eff_timeout)
@@ -203,7 +207,7 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                         "image_url": {"url": f"data:image/jpeg;base64,{_b64_image(p)}"}})
     global LAST_BACKEND
     last = None
-    for model in KIMI_MODELS:
+    for mi, model in enumerate(KIMI_MODELS):
         for attempt in range(len(_BACKOFF) + 1):
             eff_timeout = float(timeout)
             if deadline is not None:
@@ -211,6 +215,12 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                 if remaining < 2:
                     raise last or RuntimeError("kimi deadline exhausted")
                 eff_timeout = min(eff_timeout, remaining)
+                # an attempt with a fallback still behind it must not eat the
+                # whole window: one slow call would leave every later attempt
+                # starting with under 2s
+                has_fallback = mi < len(KIMI_MODELS) - 1 or attempt < len(_BACKOFF)
+                if has_fallback and remaining > 9:
+                    eff_timeout = min(eff_timeout, remaining - 4.5)
             try:
                 r = requests.post(
                     "https://api.fireworks.ai/inference/v1/chat/completions",

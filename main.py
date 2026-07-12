@@ -129,9 +129,18 @@ def process_one(task: dict, workdir: str) -> dict:
         # thin to ~8 stills for the quick single-call grounding
         frames = frames[::3]
     # absolute deadlines: grounding leaves ~3s for styling (cerebras answers in
-    # 1-2s); styling may run slightly past the soft budget (hard axe at +3)
+    # 1-2s); styling may run slightly past the soft budget (hard axe at +4)
     clip_deadline = t_dl + CLIP_BUDGET
-    description = caption.ground(frames, transcript, deadline=clip_deadline - 3)
+    try:
+        description = caption.ground(frames, transcript, deadline=clip_deadline - 3)
+    except Exception:
+        # never surrender a clip we can still caption: a real caption a couple
+        # of seconds past the soft budget scores far better than a generic
+        # fallback (the 0.32 run was exactly this trade made the wrong way).
+        # 4 stills, tiny payload, bounded by the hard axe.
+        step = max(1, len(frames) // 4)
+        description = caption.ground(frames[::step][:4], transcript,
+                                     deadline=max(clip_deadline + 2, time.time() + 5))
     # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
     # weaker model second-guess it
     if USE_VERIFY and gc.LAST_BACKEND != "kimi" and left() > 12:
@@ -139,7 +148,9 @@ def process_one(task: dict, workdir: str) -> dict:
             description = caption.verify(frames, description)
         except Exception:
             pass  # the unverified description is still good
-    return caption.stylize(description, styles, deadline=clip_deadline + 2)
+    # styling gets at least a small window even after a last-resort grounding
+    return caption.stylize(description, styles,
+                           deadline=max(clip_deadline + 2, time.time() + 2.5))
 
 
 def main() -> int:
@@ -164,7 +175,7 @@ def main() -> int:
                 _pool = ThreadPoolExecutor(max_workers=1)
                 _fut = _pool.submit(process_one, task, workdir)
                 _pool.shutdown(wait=False)
-                caps = _fut.result(timeout=CLIP_BUDGET + 3)
+                caps = _fut.result(timeout=CLIP_BUDGET + 4)
             except Exception as e:
                 print(f"[prism] {tid} ERROR: {e}", file=sys.stderr)
                 caps = _fallback_captions(styles, "A short video clip.")

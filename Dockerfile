@@ -34,6 +34,13 @@ ARG FIREWORKS_API_KEY=""
 ARG PRISM_FW_MODEL=""
 ARG AMD_GEMMA_BASE_URL=""
 ARG AMD_GEMMA_MODEL="google/gemma-3-12b-it"
+# flow/STT default OFF: 25-frame extraction + the STT side-thread saturate the
+# grader's 2 vCPUs (v14 scored 0.32 that way: extraction alone took 15-25s,
+# the deadlines fired, and clips fell back to generic captions). The 8-frame
+# quick path is the judge-proven 0.87 recipe; the deadline system stays as a
+# safety net only.
+ARG PRISM_FLOW=0
+ARG PRISM_STT=0
 ENV HF_TOKEN=${HF_TOKEN} \
     HF_GEMMA_MODEL=${HF_GEMMA_MODEL} \
     FIREWORKS_API_KEY=${FIREWORKS_API_KEY} \
@@ -42,8 +49,8 @@ ENV HF_TOKEN=${HF_TOKEN} \
     AMD_GEMMA_MODEL=${AMD_GEMMA_MODEL} \
     PRISM_AUDIO=0 \
     PRISM_VERIFY=1 \
-    PRISM_FLOW=1 \
-    PRISM_STT=1 \
+    PRISM_FLOW=${PRISM_FLOW} \
+    PRISM_STT=${PRISM_STT} \
     PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python", "main.py"]
