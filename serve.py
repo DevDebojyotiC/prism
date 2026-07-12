@@ -88,10 +88,30 @@ def _run(vid_path: str, workdir: str) -> dict:
     except Exception:
         anchors = {}
 
+    # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
+    # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
+    # demo simply omits the row when the endpoint is not configured or down.
+    heard = ""
+    amd_audio = os.environ.get("AMD_AUDIO_BASE_URL", "").rstrip("/")
+    if amd_audio:
+        try:
+            import base64 as _b64
+            import requests as _rq
+            wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
+            if wav:
+                b64 = _b64.b64encode(open(wav, "rb").read()).decode("ascii")
+                rr = _rq.post(f"{amd_audio}/describe", json={"audio_b64": b64},
+                              headers={"ngrok-skip-browser-warning": "true"}, timeout=45)
+                if rr.ok and rr.json().get("text"):
+                    heard = rr.json()["text"]
+        except Exception:
+            heard = ""
+
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
     return {
         "captions": captions,
         "anchors": anchors,
+        "heard": heard,
         "description": description,
         "title": title,
         "montage": montage_uri,

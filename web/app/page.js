@@ -432,6 +432,12 @@ export default function Page() {
                     </button>
                   </div>
                   <p className="desc">{result.description}</p>
+                  {result.heard && (
+                    <p className="heard"
+                       title="Soundtrack description from a self-hosted Gemma 3n E4B running on an AMD Radeon W7900 (ROCm). The hosted APIs don't serve Gemma's audio checkpoints.">
+                      <span className="heard-k">soundtrack · Gemma 3n on AMD</span> {result.heard}
+                    </p>
+                  )}
                 </div>
                 <div className="langbar">
                   <span className="ev-k">Four voices</span>

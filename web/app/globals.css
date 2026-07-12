@@ -588,3 +588,7 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 }
 .listen:hover{color:var(--ink);border-color:var(--ink-faint)}
 .listen.on{color:var(--ink);border-color:var(--ink-faint)}
+
+/* "Gemma hears" soundtrack row */
+.heard{margin:10px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-dim);cursor:help}
+.heard-k{font-family:var(--mono);font-size:10px;color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-right:8px;white-space:nowrap}
