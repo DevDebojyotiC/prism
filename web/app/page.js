@@ -40,6 +40,7 @@ export default function Page() {
   const [lang, setLang] = useState("English");
   const [translated, setTranslated] = useState(null);   // captions in `lang`, or null for English
   const [translating, setTranslating] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
   const outRef = useRef(null);
@@ -126,6 +127,18 @@ export default function Page() {
     setPhase("input");
   }
 
+  function speak(text) {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    if (synth.speaking) { synth.cancel(); setSpeaking(false); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    synth.speak(u);
+  }
+
   async function changeLang(l) {
     setLang(l);
     if (l === "English" || !result?.captions) { setTranslated(null); return; }
@@ -142,6 +155,7 @@ export default function Page() {
   }
 
   async function run(promise, label) {
+    window.speechSynthesis?.cancel(); setSpeaking(false);
     setError(""); setResult(null); setTranslated(null); setLang("English");
     setSourceLabel(label || ""); setPhase("loading");
     try {
@@ -409,7 +423,14 @@ export default function Page() {
                       <span>{sourceLabel}</span>
                     </div>
                   )}
-                  <div className="ev-k gk">Grounded description · the facts all four captions are built from</div>
+                  <div className="gk-row">
+                    <div className="ev-k gk">Grounded description · the facts all four captions are built from</div>
+                    <button className={"listen" + (speaking ? " on" : "")}
+                            onClick={() => speak(result.description)}
+                            title="Read the description aloud (your browser's voice; a Gemma voice via T5Gemma-TTS is on the roadmap)">
+                      {speaking ? "stop" : "listen"}
+                    </button>
+                  </div>
                   <p className="desc">{result.description}</p>
                 </div>
                 <div className="langbar">

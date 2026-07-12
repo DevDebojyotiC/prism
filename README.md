@@ -118,6 +118,10 @@ the demo's fact-anchor check). The family has obvious next steps:
 - **Indic-language depth.** Navarasa (Telugu-LLM-Labs' Gemma fine-tune for Indic
   languages) shows where transcreation can go; Prism's selector already covers Hindi,
   Bengali, Telugu, and Tamil.
+- **A Gemma voice.** The demo's "listen" button uses the browser's speech engine
+  today; the Gemma-family swap-in is T5Gemma-TTS (a community TTS built on Google's
+  T5Gemma weights), following the same open pipeline pattern HF and Cerebras
+  demonstrated with Gemma-4 voice agents.
 - **On-device Prism.** Open weights make the endgame local and private: small Gemma
   checkpoints captioning on the machine that recorded the video.
 

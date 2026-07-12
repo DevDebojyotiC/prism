@@ -579,3 +579,12 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
   border:1px solid var(--line);border-radius:6px;padding:3px 7px;
   margin-right:8px;white-space:nowrap;cursor:help;
 }
+
+/* listen (browser speech) */
+.gk-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.listen{
+  font-family:var(--mono);font-size:10px;color:var(--ink-dim);background:none;
+  border:1px solid var(--line-2);border-radius:6px;padding:3px 10px;cursor:pointer;
+}
+.listen:hover{color:var(--ink);border-color:var(--ink-faint)}
+.listen.on{color:var(--ink);border-color:var(--ink-faint)}
