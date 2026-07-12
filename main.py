@@ -103,22 +103,22 @@ def process_one(task: dict, workdir: str) -> dict:
     # frame ladder keyed on download time (extraction cost at 2 vCPU in
     # parens): denser sampling catches brief events (a sprinter crossing in
     # ~1s) that sparse frames miss, so spend whatever the download left over.
-    #   dl < 6s  -> 16 frames (~7s)     dl < 10s -> 12 frames (~5s)
-    #   dl <= 12s -> 8 frames (~4s)     beyond   -> 6 frames (~3s)
+    #   dl < 7s  -> 16 frames (~7s)     dl < 10s -> 13 frames (~5.5s)
+    #   dl < 12s -> 10 frames (~4.5s)   beyond   -> 8 frames (~4s)
     if N_FRAMES_ENV:
         default_n = 8
     elif use_flow:
         default_n = 25
     elif not gc.kimi_available():
         default_n = 5
-    elif dl_secs < 6:
+    elif dl_secs < 7:
         default_n = 16
     elif dl_secs < 10:
-        default_n = 12
-    elif dl_secs <= 12:
-        default_n = 8
+        default_n = 13
+    elif dl_secs < 12:
+        default_n = 10
     else:
-        default_n = 6
+        default_n = 8
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
