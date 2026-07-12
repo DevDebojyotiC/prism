@@ -431,6 +431,12 @@ export default function Page() {
                       <div className="v-head">
                         <span className="lam">{st.lam}</span>
                         <div><div className="v-name">{st.name}</div><span className="v-sub">{st.sub}</span></div>
+                        {!translated && result.anchors?.[st.key] != null && (
+                          <span className="anchor"
+                                title="Fact anchor: EmbeddingGemma cosine similarity between this caption and the grounded description. A read-only consistency check.">
+                            facts {result.anchors[st.key].toFixed(2)}
+                          </span>
+                        )}
                         <button className={"copy" + (copied === st.key ? " ok" : "")}
                                 onClick={() => copy(st.key, (translated || result.captions)?.[st.key])}>
                           {copied === st.key ? "✓ copied" : "copy"}
@@ -476,6 +482,10 @@ export default function Page() {
             {
               q: "What happens when an API call fails mid-run?",
               a: "Nothing visible. Results are pre-seeded with valid in-style fallbacks and rewritten atomically after every clip; the Gemma chain fails over across three providers with retries. A crash, timeout, or rate-limit can never zero the run.",
+            },
+            {
+              q: "Does Prism use anything from the wider Gemma family?",
+              a: "Yes. The small 'facts' chip on every caption card is EmbeddingGemma: a cosine-similarity check that each styled caption stays semantically anchored to the grounded description. It's read-only by design; checks can't hurt the captions. On the roadmap: audio-input Gemma to ground on the soundtrack, and ShieldGemma 2 as a safety pass for brand use.",
             },
             {
               q: "Can it caption in my language?",

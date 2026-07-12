@@ -49,7 +49,7 @@ class TranslateReq(BaseModel):
 # demo language selector; Gemma-4 covers 140+ languages; this is a showcase
 # list, not a limit
 LANGUAGES = [
-    "English", "Hindi", "Bengali", "Tamil", "Spanish", "French", "German",
+    "English", "Hindi", "Bengali", "Telugu", "Tamil", "Spanish", "French", "German",
     "Portuguese", "Italian", "Japanese", "Korean", "Chinese (Simplified)",
     "Arabic", "Indonesian", "Turkish", "Swahili",
 ]
@@ -82,9 +82,16 @@ def _run(vid_path: str, workdir: str) -> dict:
 
     title = caption.make_title(description)  # demo-only human-readable name
 
+    # fact-anchor: EmbeddingGemma similarity of each caption to the grounded facts
+    try:
+        anchors = caption.fact_anchor(description, captions)
+    except Exception:
+        anchors = {}
+
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
     return {
         "captions": captions,
+        "anchors": anchors,
         "description": description,
         "title": title,
         "montage": montage_uri,

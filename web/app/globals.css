@@ -572,3 +572,10 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
 .faq-item[open] summary::after{content:"–"}
 .faq-item summary:hover{color:var(--ink)}
 .faq-item p{padding:0 16px 14px;margin:0;font-size:13.5px;line-height:1.65;color:var(--ink-dim)}
+
+/* fact-anchor chip (EmbeddingGemma consistency check) */
+.anchor{
+  font-family:var(--mono);font-size:10px;color:var(--ink-dim);
+  border:1px solid var(--line);border-radius:6px;padding:3px 7px;
+  margin-right:8px;white-space:nowrap;cursor:help;
+}

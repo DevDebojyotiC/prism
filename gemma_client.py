@@ -216,5 +216,21 @@ def vision_describe(frame_paths: List[str], prompt: str,
                 temperature=0.2, timeout=timeout)
 
 
+def embed(texts, timeout: int = 30):
+    """Sentence embeddings via EmbeddingGemma (google/embeddinggemma-300m) on the
+    HF router. Used by the demo's fact-anchor check: is each styled caption still
+    semantically anchored to the grounded description? A check, not a rewrite."""
+    r = requests.post(
+        "https://router.huggingface.co/hf-inference/models/google/embeddinggemma-300m/pipeline/feature-extraction",
+        headers={"Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}"},
+        json={"inputs": texts}, timeout=timeout,
+    )
+    r.raise_for_status()
+    vecs = r.json()
+    if vecs and isinstance(vecs[0][0], list):  # token-level output: take first row
+        vecs = [v[0] for v in vecs]
+    return vecs
+
+
 def active_backends() -> List[str]:
     return [b.name for b in _backends()]

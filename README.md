@@ -105,6 +105,22 @@ See [`documentation.md`](documentation.md) for a function-level reference.
 
 ---
 
+## Roadmap: deeper into the Gemmaverse
+
+Prism already uses two family members (Gemma-4-31B for authorship, EmbeddingGemma for
+the demo's fact-anchor check). The family has obvious next steps:
+
+- **Audio-input Gemma.** Prism currently discards the soundtrack. Gemma's audio-capable
+  models could ground on commentary, crowd noise, or UI clicks in screen recordings,
+  the extension most likely to lift accuracy further.
+- **ShieldGemma 2.** For brands publishing four-voice captions at scale, a safety pass
+  over the humorous outputs before they ship.
+- **Indic-language depth.** Navarasa (Telugu-LLM-Labs' Gemma fine-tune for Indic
+  languages) shows where transcreation can go; Prism's selector already covers Hindi,
+  Bengali, Telugu, and Tamil.
+- **On-device Prism.** Open weights make the endgame local and private: small Gemma
+  checkpoints captioning on the machine that recorded the video.
+
 ## Notes
 - Track 2 injects no credentials, so model tokens are baked into the public image at build
   time. If you fork this, use disposable tokens and rotate them afterwards.
