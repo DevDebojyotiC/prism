@@ -138,11 +138,11 @@ the demo's fact-anchor check). The family has obvious next steps:
   checkpoints captioning on the machine that recorded the video.
 
 ## Notes
-- **The graded submission image was built from the commit tagged `v10-scored`.**
-  Later commits are demo and documentation enhancements (language transcreation,
-  fact-anchor, audio understanding, the Gemma voice); the graded pipeline's
-  behavior is unchanged, and the experimental flow-montage grounding is opt-in
-  via `PRISM_FLOW=1`.
+- **Graded submission images:** `v10-scored` tag = the 0.87 run (quick 8-frame
+  grounding). `v11-scored` tag = the current head, which enables the flow-montage
+  grounding (`PRISM_FLOW=1`) and speech-aware grounding (`PRISM_STT=1`) inside
+  the image; both flags revert at runtime, and timing guards keep 4K clips under
+  the 30s budget. Everything else in later commits is demo and documentation.
 - Track 2 injects no credentials, so model tokens are baked into the public image at build
   time. If you fork this, use disposable tokens and rotate them afterwards.
 - Built for `linux/amd64`; CPU-only; ~10–20s per clip, well within the 30 s/clip and 10 min budgets.
