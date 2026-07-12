@@ -15,7 +15,7 @@ const BACKENDS = {
 };
 
 const CHIP_C = ["--formal", "--tech", "--sarcastic", "--nontech"];
-const LOAD_MSGS = ["Sampling frames…", "Gemma-4 is watching the montage…", "Refracting into four voices…"];
+const LOAD_MSGS = ["Sampling frames…", "Vision race is grounding the clip…", "Refracting into four voices…"];
 
 function basename(u) {
   try { return decodeURIComponent(u.split("/").pop().split("?")[0]) || u; }
@@ -459,8 +459,8 @@ export default function Page() {
               </div>
               <div className="track"><div className="fill" style={{ transform: `scaleX(${progress / 100})` }} /></div>
               <div className="stages">
-                <div className={"stage" + (loadStage >= 0 ? " on" : "")}><div className="st-k"><i />01 · Frames</div><div className="st-v">Tile frames into one montage</div></div>
-                <div className={"stage" + (loadStage >= 1 ? " on" : "")}><div className="st-k"><i />02 · Vision</div><div className="st-v">Gemma-4 studies the montage</div></div>
+                <div className={"stage" + (loadStage >= 0 ? " on" : "")}><div className="st-k"><i />01 · Frames</div><div className="st-v">Sample frames across the clip</div></div>
+                <div className={"stage" + (loadStage >= 1 ? " on" : "")}><div className="st-k"><i />02 · Vision</div><div className="st-v">Grounding race reads the frames</div></div>
                 <div className={"stage" + (loadStage >= 2 ? " on" : "")}><div className="st-k"><i />03 · Refraction</div><div className="st-v">Split into four voices</div></div>
               </div>
             </div>
@@ -605,7 +605,7 @@ export default function Page() {
             },
             {
               q: "Then what does the frontier vision model do?",
-              a: "Perception only, in accuracy mode: one grounding call turns 8 frames into a factual description, and that's where its job ends. Gemma turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end: same pipeline, Gemma does both jobs.",
+              a: "Perception only: one grounding call turns up to 16 frames into a factual description, and that's where its job ends. Three vision lanes race in parallel (Kimi-k2p6, Qwen3-VL, and Gemma itself as the last resort) and the best-ranked answer that succeeds wins; Gemma then turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end: same pipeline, Gemma does both jobs.",
             },
             {
               q: "Why not use Gemma for vision too?",
@@ -617,7 +617,7 @@ export default function Page() {
             },
             {
               q: "What happens when an API call fails mid-run?",
-              a: "Nothing visible. Results are pre-seeded with valid in-style fallbacks and rewritten atomically after every clip; the Gemma chain fails over across three providers with retries. A crash, timeout, or rate-limit can never zero the run.",
+              a: "Nothing visible. The grounding lanes run in parallel, so a fallback answer is already in hand the moment the primary fails instead of starting on an exhausted clock. Every call carries a per-clip deadline, the frame count degrades gracefully before anything surrenders, results are pre-seeded and rewritten atomically after every clip, and Gemma styling fails over across four serverless hosts. A crash, timeout, or rate-limit can never zero the run.",
             },
             {
               q: "Does Prism use anything from the wider Gemma family?",

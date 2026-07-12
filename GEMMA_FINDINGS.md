@@ -203,6 +203,33 @@ All scores from the competition's live leaderboard, same team, same harness:
 
 ---
 
+## 8. Grounding bench: where Gemma lands among serverless VLMs
+
+To pick the lanes for Prism's parallel grounding race, we ran every live serverless
+vision model we could reach against the eight public validation clips with an
+identical prompt (five 768px frames each) and graded the descriptions against the
+frames by hand.
+
+| Model (host) | Avg latency | Verdict on the 8 clips |
+|---|---|---|
+| Kimi-k2p6 (Fireworks) | ~5-8s | Best scene identification and OCR; the race's primary |
+| Qwen3-VL-235B (HF router) | 5.7s | Close second on richness and fine detail; occasional OCR slips |
+| **Gemma-4-31B (HF router)** | **1.6s** | **Best signage OCR of the whole field** (it alone read both street-sign texts on the boulevard clip and the billboard on the crossing clip correctly), 3-4x faster than everything else, but the least descriptive richness and the known fine-grained perception gaps of §6 |
+| Qwen3-VL-30B (HF router) | 4.4s | Fast but invented a brand name on one clip |
+| Qwen2.5-VL-72B (HF router) | 6.0s | Most factual errors (misidentified the vegetable in the cooking clip) |
+
+Two findings worth stating plainly. First, Gemma's OCR strength from §1 is not an
+artifact of our tests: against much larger VLMs on real video frames it reads
+on-screen text most reliably. Second, Gemma's speed makes it the perfect *always-on
+insurance lane*: it costs almost nothing to run in parallel, and when both larger
+models fail (rate limits, congestion, payload issues) its answer is already in
+hand. In our stress runs the Gemma lane carried clips that would otherwise have
+produced no caption at all, and those captions still verified cleanly against the
+frames. That is the design: Gemma authors every word all the time, and sees for
+itself whenever seeing is needed.
+
+---
+
 ## Summary: what Gemma-4 is the right tool for
 
 | Capability | Measured verdict |

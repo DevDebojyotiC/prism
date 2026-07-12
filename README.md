@@ -23,9 +23,16 @@ branding: this repo shows precisely what each model does.
 | Role | Model | Notes |
 |---|---|---|
 | **Caption authorship: every graded word, all four styles** | **Gemma-4-31B-it** | One structured-JSON call, `reasoning_effort:"none"`, temp 0.7 |
-| Perception / grounding (accuracy mode, default) | Kimi-k2p6 (Fireworks serverless) | One call over 8 × 768px frames; reports facts only, writes nothing the judge sees |
-| Perception / grounding (pure-Gemma mode) | Gemma-4-31B-it | 5 × 768px frames (the managed endpoint's per-call image cap) |
-| Failover styling | Gemma-4 via Fireworks → Gemma-3 (AMD-hosted) | 3-tier chain; retries on transient errors |
+| Perception / grounding, primary | Kimi-k2p6 (Fireworks serverless) | Up to 16 × 768px frames (a download-time ladder: 16/13/10/8); reports facts only, writes nothing the judge sees |
+| Perception / grounding, parallel hedge | Qwen3-VL-235B (HF router) | Races alongside Kimi; its answer is used only if Kimi fails |
+| Perception / grounding, last resort | Gemma-4-31B-it | Third lane of the same race; also the whole pipeline in pure-Gemma mode (no `FIREWORKS_API_KEY`) |
+| Speech transcription (budget-gated) | Gemma 3n E4B | Side-thread transcript feeds the grounding when the clock allows |
+| Failover styling | Gemma-4 across four serverless hosts | Provider-pinned failover with per-clip deadlines; retries on transient errors |
+
+The three grounding lanes fire **in parallel** and the pipeline keeps the best-ranked answer
+that succeeded, so a provider outage degrades quality by one rung instead of zeroing a clip.
+Every model call carries an absolute per-clip deadline, and a hard cutoff guarantees the
+30s/clip budget on any input.
 
 Why the split? Gemma-4's vision encoder has measurable perception limits (it read an afro
 puff as a "high bun"; no prompt can recover what the encoder never extracted; see
@@ -38,23 +45,30 @@ runs **pure-Gemma end to end**.
 
 ```mermaid
 flowchart LR
-    A[video clip] --> B["sample 8 frames @768px<br/>(skip first/last 5%)"]
-    B --> C{"grounding"}
-    C -- "accuracy mode" --> D["Kimi-k2p6<br/>one vision call → facts"]
-    C -- "pure-Gemma mode" --> E["Gemma-4-31B<br/>5 frames → facts (+ verify pass)"]
+    A[video clip] --> B["sample up to 16 frames @768px<br/>(ladder by download time,<br/>skip first/last 5%)"]
+    A -.-> T["Gemma 3n speech transcript<br/>(side thread, budget-gated)"]
+    B --> C{"grounding race<br/>(parallel, ranked)"}
+    T -.-> C
+    C --> D["Kimi-k2p6<br/>primary"]
+    C --> Q["Qwen3-VL-235B<br/>hedge"]
+    C --> E["Gemma-4-31B<br/>last resort"]
     D --> F["Gemma-4-31B<br/>writes ALL four captions<br/>in one structured-JSON call"]
-    E --> F
+    Q -.-> F
+    E -.-> F
     F --> G["formal · sarcastic ·<br/>humorous_tech · humorous_non_tech"]
 ```
 
 *Ground once, restyle four ways*: one factual description keeps every caption faithful to the
-same facts while each voice lands its own tone. The pipeline is deliberately simple, two
-model calls per clip, because we A/B-tested sophistication on the live judge and **simple
-won** (rubric machinery and best-of-N selection measurably lowered the real score; the full
-experiment log is in [GEMMA_FINDINGS §7](GEMMA_FINDINGS.md)).
+same facts while each voice lands its own tone. The pipeline stays deliberately simple, one
+grounding answer plus one styling call per clip, because we A/B-tested sophistication on the
+live judge and **simple won** (rubric machinery and best-of-N selection measurably lowered
+the real score; the full experiment log is in [GEMMA_FINDINGS §7](GEMMA_FINDINGS.md)). The
+redundancy budget goes to reliability instead: the grounding lanes race in parallel rather
+than in sequence, so a fallback never starts with an exhausted clock.
 
 Reliability is the floor: results are pre-seeded with valid in-style fallbacks and rewritten
-atomically after every clip, so a crash or timeout can never zero the run.
+atomically after every clip, a per-clip time budget degrades gracefully (fewer, smaller
+frames) before it ever surrenders, and a crash or timeout can never zero the run.
 
 ---
 
