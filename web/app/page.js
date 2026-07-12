@@ -453,6 +453,42 @@ export default function Page() {
           </section>
         )}
 
+        <section className="faq">
+          <div className="rule" />
+          <h2 className="faq-title">Straight answers <span className="faq-sub">— what judges (and skeptics) ask us</span></h2>
+          {[
+            {
+              q: "Is this really Gemma, or is Gemma just branding?",
+              a: "Really Gemma. Every graded word — all four caption styles, every clip — is authored by Gemma-4-31B in one structured-JSON call. The code path is public: gemma_client.py (the 3-tier Gemma failover) and caption.py stylize(). No other model writes a single word the judge sees.",
+            },
+            {
+              q: "Then what does the frontier vision model do?",
+              a: "Perception only, in accuracy mode: one grounding call turns 8 frames into a factual description, and that's where its job ends. Gemma turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end — same pipeline, Gemma does both jobs.",
+            },
+            {
+              q: "Why not use Gemma for vision too?",
+              a: "We did — and we measured why it costs accuracy. Gemma-4's encoder compresses each image to ~256 tokens and makes reproducible fine-grained errors (it read an afro puff as a 'high bun'; it names unverifiable pizza toppings with full confidence). No prompt can recover what the encoder never extracted. The full evidence — frames included — is in GEMMA_FINDINGS.md.",
+            },
+            {
+              q: "How do the four styles stay genuinely different?",
+              a: "One factual description, one Gemma call, four contracts: each style ships a definition, a good example, and an anti-example. Grounding once keeps every voice faithful to the same facts; the structured-JSON output keeps them separable and machine-checkable.",
+            },
+            {
+              q: "What happens when an API call fails mid-run?",
+              a: "Nothing visible. Results are pre-seeded with valid in-style fallbacks and rewritten atomically after every clip; the Gemma chain fails over across three providers with retries. A crash, timeout, or rate-limit can never zero the run.",
+            },
+            {
+              q: "Can it caption in my language?",
+              a: "Yes — pick one from the selector above the caption cards. Gemma transcreates all four captions in one call, preserving each voice: the sarcasm stays dry in Hindi, the tech joke still lands in Japanese. Gemma covers 140+ languages; we surface sixteen in the demo.",
+            },
+          ].map((f, i) => (
+            <details key={i} className="faq-item">
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))}
+        </section>
+
         <footer>
           <div className="rule" />
           <p>Prism · AMD Developer Hackathon ACT II · Track 2 · every caption authored by Gemma-4</p>
