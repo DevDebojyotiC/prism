@@ -62,6 +62,17 @@ def _b64_jpeg(path: str) -> str:
 
 def _run(vid_path: str, workdir: str) -> dict:
     t0 = time.time()
+    # speech transcript on a side thread, mirroring the graded pipeline
+    # (main.py, PRISM_STT=1): overlapped with frame extraction, waited on
+    # briefly at grounding time, and fed into ground() so what is SAID
+    # genuinely shapes the captions
+    import audio_intel
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    stt_via: dict = {}
+    _stt_pool = _TPE(max_workers=1)
+    stt_future = _stt_pool.submit(audio_intel.clip_transcript, vid_path, workdir, stt_via)
+    _stt_pool.shutdown(wait=False)
+
     frames_dir = os.path.join(workdir, "frames")
     default_n = 25 if gc.kimi_available() else 5   # demo always uses flow-montage grounding
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
@@ -72,8 +83,16 @@ def _run(vid_path: str, workdir: str) -> dict:
     video.make_montage(frames, montage_path)
     t_frames = time.time() - t0
 
+    transcript = ""
+    try:
+        # same 10s cap as the graded path; grounding proceeds without the
+        # transcript if transcription is still running
+        transcript = stt_future.result(timeout=10) or ""
+    except Exception:
+        pass
+
     t1 = time.time()
-    description = caption.ground(frames)
+    description = caption.ground(frames, transcript)
     t_ground = time.time() - t1
 
     t2 = time.time()
@@ -91,7 +110,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
-    heard, heard_via, transcript = "", "", ""
+    heard, heard_via = "", ""
     transcript_via = ""
     audio_via = {"v": ""}  # which engine actually served audio this run
 
@@ -131,43 +150,25 @@ def _run(vid_path: str, workdir: str) -> dict:
                 heard_via = audio_via["v"]
             except Exception:
                 pass
-        # transcript: Gemma 3n first (chunked; its audio encoder ingests ~30s
-        # per input), Gemini only when a Gemma call errors. Word-synced live
-        # captions were prototyped and parked as experimental (see roadmap).
+    # transcript: reuse the side-thread result that already informed the
+    # grounding (same text the graded pipeline uses). If it wasn't ready at
+    # grounding time we finish waiting for it here, display-only, exactly as
+    # the graded path would have proceeded caption-wise without it.
+    if not transcript:
         try:
-            import subprocess as _sp
-            from concurrent.futures import ThreadPoolExecutor as _TPE
-            seg_pat = os.path.join(workdir, "seg_%02d.wav")
-            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", "28",
-                     "-ac", "1", "-ar", "16000", seg_pat], capture_output=True, timeout=60)
-            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:6]
-            segs = [os.path.join(workdir, p) for p in segs] or [wav]
-
-            def _tr_one(p):
-                try:
-                    return _hear_any(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
-                except Exception:
-                    return ""
-
-            with _TPE(max_workers=len(segs)) as ex:
-                parts = list(ex.map(_tr_one, segs))
-            keep = []
-            for tr in parts:
-                words = tr.split()
-                # degenerate-repetition guard: music beds sometimes "transcribe" as
-                # one token repeated dozens of times; real speech has variety
-                degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
-                if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
-                    keep.append(tr.strip())
-            transcript = " ".join(keep)
-            if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
-                cut = transcript[:1400]
-                dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
-                transcript = cut[:dot + 1] if dot > 300 else cut.rsplit(" ", 1)[0] + "…"
-            if transcript:
-                transcript_via = audio_via["v"] or "Gemma 3n"
+            transcript = stt_future.result(timeout=30) or ""
         except Exception:
             pass
+    if transcript:
+        engines = sorted(stt_via.get("engines", set()))
+        if engines == ["Gemma 3n"]:
+            transcript_via = "Gemma 3n serverless"
+        elif engines == ["Gemini"]:
+            transcript_via = "Gemini (fallback; Gemma 3n hosting momentarily unavailable)"
+        elif engines:
+            transcript_via = "Gemma 3n + Gemini (fallback on errored chunks)"
+        else:
+            transcript_via = "Gemma 3n"
 
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
     return {

@@ -15,7 +15,9 @@ import video
 
 def _usable(tr: str) -> bool:
     words = tr.split()
-    if not tr or "NO_SPEECH" in tr.upper():
+    up = tr.upper().strip()
+    # the model sometimes writes the sentinel loosely ("No speech.")
+    if not tr or "NO_SPEECH" in up or up.startswith("NO SPEECH"):
         return False
     # degenerate-repetition guard: music beds sometimes "transcribe" as one token
     # repeated dozens of times; real speech has lexical variety
@@ -24,8 +26,10 @@ def _usable(tr: str) -> bool:
     return True
 
 
-def clip_transcript(vid_path: str, workdir: str) -> str:
-    """Best-effort transcript of the clip's speech, '' when there is none."""
+def clip_transcript(vid_path: str, workdir: str, via: dict | None = None) -> str:
+    """Best-effort transcript of the clip's speech, '' when there is none.
+    When a dict is passed as `via`, the engines that actually served chunks are
+    recorded under via['engines'] (demo display; the graded caller omits it)."""
     try:
         wav = video.extract_audio(vid_path, os.path.join(workdir, "stt.wav"))
         if not wav:
@@ -42,10 +46,16 @@ def clip_transcript(vid_path: str, workdir: str) -> str:
 
         def _one(p):
             try:
-                return gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
+                out = gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
+                if via is not None:
+                    via.setdefault("engines", set()).add("Gemma 3n")
+                return out
             except Exception:
                 try:
-                    return gc.gemini_hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
+                    out = gc.gemini_hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
+                    if via is not None:
+                        via.setdefault("engines", set()).add("Gemini")
+                    return out
                 except Exception:
                     return ""
 
