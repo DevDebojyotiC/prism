@@ -1,32 +1,60 @@
-# Prism — One clip, four voices
+# Prism — One clip, four voices, one Gemma brain
 
 Prism is a video-captioning agent built for the **AMD Developer Hackathon ACT II — Track 2**.
-Give it a short video clip and it writes **four captions of the same clip in four different
-styles** — formal, sarcastic, tech-humor, and everyday-humor — all powered by Google's
-**Gemma-4** vision model.
+It refracts a single video into four audience-tuned captions — **formal, sarcastic,
+humorous-tech, humorous-non-tech** — like a prism splitting light. Every graded word is
+authored by **Google's Gemma-4-31B**: it writes all four voices in a single structured-JSON
+call, holds tone without drifting off-facts, and scales to six concurrent calls in about a
+second. We chose Gemma deliberately, and we can prove why — because we **measured** it. Our
+[**GEMMA_FINDINGS**](GEMMA_FINDINGS.md) report documents where Gemma-4 excels (9-pixel OCR at
+≥512px inputs, sub-second latency, near-perfect parallel scaling, rock-solid JSON compliance,
+genuinely good stylistic writing) and where its vision encoder hits real limits — which is
+exactly why, in our accuracy mode, a frontier vision model handles *perception only* while
+**Gemma remains the load-bearing language brain that crafts 100% of the captions**. No fake
+branding: this repo shows precisely what each model does.
 
 > *"A whole, pre-sliced pizza with a golden-brown crust… a hand sprinkles parmesan across the surface."* — **formal**
 > *"Applying a hotfix of parmesan to the production environment, hopefully without crashing the crust."* — **tech-humor**
 
 ---
 
+## Who does what (the honest model-role table)
+
+| Role | Model | Notes |
+|---|---|---|
+| **Caption authorship — every graded word, all four styles** | **Gemma-4-31B-it** | One structured-JSON call, `reasoning_effort:"none"`, temp 0.7 |
+| Perception / grounding (accuracy mode, default) | Kimi-k2p6 (Fireworks serverless) | One call over 8 × 768px frames; reports facts only, writes nothing the judge sees |
+| Perception / grounding (pure-Gemma mode) | Gemma-4-31B-it | 5 × 768px frames (the managed endpoint's per-call image cap) |
+| Failover styling | Gemma-4 via Fireworks → Gemma-3 (AMD-hosted) | 3-tier chain; retries on transient errors |
+
+Why the split? Gemma-4's vision encoder has measurable perception limits (it read an afro
+puff as a "high bun"; no prompt can recover what the encoder never extracted — see
+[GEMMA_FINDINGS §6](GEMMA_FINDINGS.md)). Pairing Gemma with a frontier model *for perception
+only* is a documented, intentional engineering decision — the same division of labor used by
+the strongest Gemma-based entries in this competition. Set no `FIREWORKS_API_KEY` and Prism
+runs **pure-Gemma end to end**.
+
 ## How it works
 
-Prism follows a *ground once, restyle four ways* pipeline:
+```mermaid
+flowchart LR
+    A[video clip] --> B["sample 8 frames @768px<br/>(skip first/last 5%)"]
+    B --> C{"grounding"}
+    C -- "accuracy mode" --> D["Kimi-k2p6<br/>one vision call → facts"]
+    C -- "pure-Gemma mode" --> E["Gemma-4-31B<br/>5 frames → facts (+ verify pass)"]
+    D --> F["Gemma-4-31B<br/>writes ALL four captions<br/>in one structured-JSON call"]
+    E --> F
+    F --> G["formal · sarcastic ·<br/>humorous_tech · humorous_non_tech"]
+```
 
-1. **Sample** — pull frames evenly across the clip (9 / 16 / 25, scaled to the clip's length).
-2. **Montage** — tile those frames into a single grid image, so the vision model reads the
-   whole clip in one small request.
-3. **Ground** — Gemma-4 studies the montage and writes **one** detailed, factual description
-   of what happens.
-4. **Restyle** — that single description is rewritten into all four styles in one structured call.
+*Ground once, restyle four ways*: one factual description keeps every caption faithful to the
+same facts while each voice lands its own tone. The pipeline is deliberately simple — two
+model calls per clip — because we A/B-tested sophistication on the live judge and **simple
+won** (rubric machinery and best-of-N selection measurably lowered the real score; the full
+experiment log is in [GEMMA_FINDINGS §7](GEMMA_FINDINGS.md)).
 
-Grounding once keeps every caption faithful to the same facts while each one nails its own
-voice. Gemma-4 does **both** the vision and the styling — the pipeline is Gemma end to end,
-which is the heart of the "best use of Gemma" story.
-
-For reliability there's a three-tier failover — HuggingFace Inference Providers → Fireworks →
-an AMD-hosted endpoint — with retries on transient errors, so the live output path never dies.
+Reliability is the floor: results are pre-seeded with valid in-style fallbacks and rewritten
+atomically after every clip, so a crash or timeout can never zero the run.
 
 ---
 
@@ -37,15 +65,16 @@ The container reads `/input/tasks.json` and writes `/output/results.json`:
 ```bash
 # tasks.json: [{ "task_id": "v1", "video_url": "https://…mp4",
 #                "styles": ["formal","sarcastic","humorous_tech","humorous_non_tech"] }]
-docker run --rm -v "$PWD/input:/input" -v "$PWD/output:/output" devdebojyotic/prism:latest
+docker run --rm -v "$PWD/input:/input" -v "$PWD/output:/output" ghcr.io/devdebojyotic/prism:latest
 ```
 
 ### Run locally
 ```bash
 pip install -r requirements.txt
-# create a .env with your HuggingFace token:
-#   HF_TOKEN=hf_xxx
+# create a .env:
+#   HF_TOKEN=hf_xxx                          # Gemma-4 via HF Inference Providers
 #   HF_GEMMA_MODEL=google/gemma-4-31B-it
+#   FIREWORKS_API_KEY=fw_xxx                 # optional: enables the Kimi grounding mode
 PRISM_INPUT=test/sample_tasks.json PRISM_OUTPUT=output/results.json python main.py
 ```
 
@@ -62,10 +91,11 @@ cd web && npm install && npm run dev   # frontend at http://localhost:3000
 | File | Purpose |
 |---|---|
 | `main.py` | Entry point — reads `/input/tasks.json`, writes `/output/results.json` |
-| `video.py` | Download, frame sampling, montage building |
+| `video.py` | Download + high-res individual frame sampling |
 | `caption.py` | Ground-once-restyle-four + the demo title helper |
 | `styles.py` | The four caption styles (definitions + examples) |
-| `gemma_client.py` | Gemma-4 client with the 3-tier failover |
+| `gemma_client.py` | Gemma-4 client (3-tier failover) + the Kimi grounding call |
+| `GEMMA_FINDINGS.md` | **Measured Gemma-4 capability research** — OCR limits, scaling, payload caps, real-judge A/Bs |
 | `transcribe.py` | Optional local audio transcription (off by default) |
 | `serve.py` | FastAPI demo backend |
 | `web/` | Next.js demo frontend |
@@ -76,9 +106,9 @@ See [`documentation.md`](documentation.md) for a function-level reference.
 ---
 
 ## Notes
-- Track 2 injects no credentials, so the model token is baked into the public image at build
-  time. If you fork this, use a disposable token and rotate it afterwards.
-- Built for `linux/amd64`; CPU-only; well within the 30 s/clip and 10 min budgets.
+- Track 2 injects no credentials, so model tokens are baked into the public image at build
+  time. If you fork this, use disposable tokens and rotate them afterwards.
+- Built for `linux/amd64`; CPU-only; ~10–20s per clip, well within the 30 s/clip and 10 min budgets.
 
 ## License
 [MIT](LICENSE)
