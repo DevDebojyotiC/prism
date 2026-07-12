@@ -92,6 +92,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
     heard, heard_via, transcript, transcript_segments = "", "", "", []
+    transcript_via = ""
     audio_via = {"v": ""}  # which engine actually served audio this run
 
     def _hear_any(path, prompt="", max_tokens=90):
@@ -130,9 +131,39 @@ def _run(vid_path: str, workdir: str) -> dict:
                 heard_via = audio_via["v"]
             except Exception:
                 pass
-        # transcript: Gemma 3n's audio encoder ingests ~30s per input, so chunk
-        # the soundtrack into 28s segments and transcribe them in parallel
-        try:
+        # transcript, timestamp-first: ask the audio model for [M:SS]-stamped
+        # utterances over the WHOLE file (real timing, so live captions match the
+        # voice). Falls back to the chunked pipeline below if stamps don't parse.
+        if not transcript_segments:
+            try:
+                import re as _re
+                raw = gc.gemini_hear(wav, gc.TS_TRANSCRIBE_PROMPT, max_tokens=2000)
+                transcript_via = "Gemini (timestamped)"
+                if "NO_SPEECH" not in raw.upper():
+                    adur = video.probe_duration(wav)
+                    hits = _re.findall(r"\[(\d{1,2}):(\d{2})\]\s*([^\[]+)", raw)
+                    segs_ts = []
+                    for m, s, txt in hits:
+                        st = int(m) * 60 + int(s)
+                        txt = " ".join(txt.split())
+                        if txt and (adur <= 0 or st < adur):
+                            segs_ts.append({"start": float(st), "text": txt})
+                    for i, seg in enumerate(segs_ts):
+                        nxt = segs_ts[i + 1]["start"] if i + 1 < len(segs_ts) else seg["start"] + 8
+                        if adur > 0:
+                            nxt = min(nxt, adur)
+                        seg["end"] = round(nxt, 1)
+                    segs_ts = [s for s in segs_ts if s["end"] > s["start"]]
+                    if segs_ts:
+                        transcript_segments = segs_ts
+                        transcript = " ".join(s["text"] for s in segs_ts)
+            except Exception:
+                pass
+
+        # fallback: chunked pipeline (Gemma 3n's audio encoder ingests ~30s per
+        # input, so chunk into segments, transcribe in parallel, sliver-refine)
+        if not transcript_segments:
+          try:
             import subprocess as _sp
             from concurrent.futures import ThreadPoolExecutor as _TPE
             SEG_SECS = 14  # finer chunks = tighter live-caption alignment
@@ -207,11 +238,12 @@ def _run(vid_path: str, workdir: str) -> dict:
                     seg["end"] = min(seg["end"], round(adur, 1))
             transcript_segments = keep  # speech windows, edges refined to ~2s
             transcript = " ".join(k["text"] for k in keep)
+            transcript_via = transcript_via or audio_via["v"] or "Gemma 3n"
             if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
                 cut = transcript[:1400]
                 dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
                 transcript = cut[:dot + 1] if dot > 300 else cut.rsplit(" ", 1)[0] + "…"
-        except Exception:
+          except Exception:
             pass
 
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
@@ -222,6 +254,7 @@ def _run(vid_path: str, workdir: str) -> dict:
         "heard_via": heard_via,
         "audio_via": audio_via["v"],
         "transcript": transcript,
+        "transcript_via": transcript_via,
         "transcript_segments": transcript_segments,
         "description": description,
         "title": title,

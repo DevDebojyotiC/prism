@@ -216,6 +216,13 @@ def vision_describe(frame_paths: List[str], prompt: str,
                 temperature=0.2, timeout=timeout)
 
 
+TS_TRANSCRIBE_PROMPT = (
+    "Transcribe the speech in this audio with timestamps. Output ONE line per "
+    "utterance in exactly this format:\n[M:SS] spoken words\n"
+    "Use the audio's own timeline for the timestamps (when each utterance STARTS). "
+    "Transcribe word for word. If a stretch has no speech, simply skip it. "
+    "If there is no intelligible speech at all, reply with exactly NO_SPEECH.")
+
 TRANSCRIBE_PROMPT = (
     "Transcribe the speech in this audio exactly, word for word. "
     "If there is no intelligible speech, reply with exactly NO_SPEECH.")
@@ -262,6 +269,7 @@ def gemini_hear(wav_path: str, prompt: str, timeout: int = 60,
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
         headers={"Authorization": f"Bearer {key}"},
         json={"model": "gemini-flash-latest", "max_tokens": max_tokens,
+              "reasoning_effort": "low",
               "messages": [{"role": "user", "content": [
                   {"type": "text", "text": prompt},
                   {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}]},

@@ -486,7 +486,7 @@ export default function Page() {
                   {mTab === "transcript" && result.transcript && (
                     <>
                       <p className="desc">"{result.transcript}"</p>
-                      <p className="tab-meta">speech transcribed by {result.audio_via || "Gemma 3n"} · appears only when the clip contains speech · drives the live captions on the source video</p>
+                      <p className="tab-meta">speech transcribed by {result.transcript_via || result.audio_via || "Gemma 3n"} · appears only when the clip contains speech · drives the live captions on the source video</p>
                     </>
                   )}
                 </div>
