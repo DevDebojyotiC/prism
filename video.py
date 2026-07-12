@@ -33,24 +33,32 @@ def probe_duration(path: str) -> float:
         return 0.0
 
 
-def extract_frames(path: str, out_dir: str, n_frames: int = 12,
-                   max_side: int = 512) -> List[str]:
-    """Sample ~n_frames evenly across the clip, downscaled. Falls back to a
-    fixed fps if duration is unknown."""
+def extract_frames(path: str, out_dir: str, n_frames: int = 5,
+                   max_side: int = 768) -> List[str]:
+    """Sample n frames evenly, skipping the first/last 5% (black intro/outro), at
+    full-ish resolution as INDIVIDUAL images. The strongest Track-2 agents feed
+    the vision model a few HIGH-RES frames, not a low-res montage — Gemma reads
+    text and fine detail far better this way."""
     os.makedirs(out_dir, exist_ok=True)
     dur = probe_duration(path)
-    vf_scale = f"scale='min({max_side},iw)':-2"
-    if dur > 0:
-        # Even sampling: n_frames across the duration.
-        fps = max(0.1, n_frames / dur)
-        vf = f"fps={fps:.4f},{vf_scale}"
+    vf = f"scale='min({max_side},iw)':-2"
+    if dur > 1.0:
+        pad = 0.05 * dur                       # skip black intro/outro
+        span = dur - 2 * pad
+        for i in range(n_frames):
+            frac = i / (n_frames - 1) if n_frames > 1 else 0.5
+            t = pad + span * frac
+            subprocess.run(                    # fast input-seek, one frame each
+                ["ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", path, "-frames:v", "1",
+                 "-vf", vf, "-q:v", "3", os.path.join(out_dir, f"f_{i:03d}.jpg")],
+                capture_output=True, timeout=30,
+            )
     else:
-        vf = f"fps=0.2,{vf_scale}"
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", path, "-vf", vf, "-frames:v", str(n_frames),
-         "-q:v", "3", os.path.join(out_dir, "f_%03d.jpg")],
-        capture_output=True, timeout=120,
-    )
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", path, "-vf", f"fps=1,{vf}", "-frames:v",
+             str(n_frames), "-q:v", "3", os.path.join(out_dir, "f_%03d.jpg")],
+            capture_output=True, timeout=120,
+        )
     frames = sorted(
         os.path.join(out_dir, f) for f in os.listdir(out_dir)
         if f.startswith("f_") and f.endswith(".jpg")

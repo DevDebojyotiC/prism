@@ -59,8 +59,8 @@ def process_one(task: dict, workdir: str) -> dict:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
 
-    dur = video.probe_duration(vid)
-    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else video.frames_for_duration(dur)
+    # a few high-res individual frames beat a low-res montage for a Gemma VLM
+    n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else 5
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
     if USE_AUDIO:
@@ -72,10 +72,9 @@ def process_one(task: dict, workdir: str) -> dict:
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
-    montage_path = os.path.join(workdir, f"{tid}_montage.jpg")
-    description = caption.ground(frames, transcript, montage_out=montage_path)
+    description = caption.ground(frames, transcript)
     if USE_VERIFY:
-        description = caption.verify(frames, description, montage_path)
+        description = caption.verify(frames, description)
     return caption.stylize(description, styles)
 
 

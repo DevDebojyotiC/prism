@@ -19,8 +19,8 @@ import styles as S
 import video as V
 
 _GROUND_PROMPT = (
-    "The image is a grid of evenly-sampled frames from ONE short video, read "
-    "left-to-right, top-to-bottom in time order.\n"
+    "These are several frames sampled from ONE short video, in chronological "
+    "order.\n"
     "Write a DETAILED, factual description of the video as a whole. Pack in "
     "concrete, verifiable detail:\n"
     "- the setting and location — if you recognize the specific city, country, or "
@@ -38,9 +38,13 @@ _GROUND_PROMPT = (
     "- notable ABSENCES when relevant (e.g. 'no people are visible').\n"
     "If you clearly recognize a place, product, animal, or franchise, name it. "
     "Only describe what is actually visible; if you are not sure what something "
-    "is, describe it in general terms rather than guessing its identity. Do not "
-    "call it a collage or separate images. Write 3-5 detailed sentences."
+    "is, describe it in general terms rather than guessing its identity. Write "
+    "4-6 detailed sentences (roughly 150-250 words)."
 )
+
+# managed vision endpoints cap a request at ~5 images; send the highest-detail
+# individual frames rather than a low-res montage.
+_MAX_IMAGES = 5
 
 
 def ground(frame_paths: List[str], transcript: str = "",
@@ -48,35 +52,28 @@ def ground(frame_paths: List[str], transcript: str = "",
     prompt = _GROUND_PROMPT
     if transcript:
         prompt += f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
-    # Managed vision endpoints cap payload size — tile frames into ONE small
-    # montage rather than sending many base64 images (which 413s). montage_out
-    # lets a caller (the demo UI) keep the exact image the model saw.
-    montage = None
-    if frame_paths:
-        dest = montage_out or os.path.join(tempfile.gettempdir(), f"prism_montage_{os.getpid()}.jpg")
-        montage = V.make_montage(frame_paths, dest)
-    images = [montage] if montage else frame_paths
-    return gc.vision_describe(images, prompt)
+    return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=600)
 
 
 _VERIFY_PROMPT = (
-    "The image is a grid of evenly-sampled frames from ONE short video, in time "
-    "order. Below is a DRAFT description of that video. Re-check the draft "
-    "carefully against the frames and produce a corrected version:\n"
+    "These are frames from ONE short video, in chronological order. Below is a "
+    "DRAFT description of that video. Re-check the draft carefully against the "
+    "frames and produce a corrected version:\n"
     "- remove or fix anything that is wrong or not actually visible;\n"
     "- add important detail that the draft missed, ESPECIALLY what HAPPENS across "
     "the clip — actions, motion and its direction, and how the scene changes from "
     "the first frames to the last;\n"
-    "- keep it specific, factual, and 3-5 sentences.\n"
+    "- keep it specific, factual, and 4-6 sentences.\n"
     "Return ONLY the corrected description.\n\nDraft:\n\"\"\"\n{desc}\n\"\"\""
 )
 
 
-def verify(frame_paths: List[str], description: str, montage_path: str) -> str:
-    """Second look — re-check the grounded description against the frames and
-    correct/enrich it (Raccoon's approach). Reuses the montage the model saw."""
+def verify(frame_paths: List[str], description: str,
+           montage_path: Optional[str] = None) -> str:
+    """Second look — re-check the grounded description against the same frames and
+    correct/enrich it (Raccoon's approach)."""
     prompt = _VERIFY_PROMPT.format(desc=description)
-    return gc.vision_describe([montage_path], prompt, max_tokens=520)
+    return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=560)
 
 
 def stylize(description: str, styles: List[str]) -> dict:
@@ -92,8 +89,8 @@ def stylize(description: str, styles: List[str]) -> dict:
         f"and rhythm, not four rephrasings of the same sentence. Pack in specific, concrete "
         f"detail from the description; vague captions score poorly.\n"
         f"Return ONLY a JSON object with exactly these keys: {keys}. Each value is a caption "
-        f"of one to three sentences (Formal may be longer and detailed; keep the humorous "
-        f"styles punchy). No extra text."
+        f"of 2 to 4 sentences (roughly 40-120 words), detailed and faithful to the "
+        f"description. No extra text."
     )
     raw = gc.chat(
         # 800 tokens: richer multi-sentence captions across 4 styles; a smaller
@@ -116,7 +113,7 @@ def _short(text: str, limit: int) -> str:
     return first
 
 
-def _tidy(val: str, limit: int = 450) -> str:
+def _tidy(val: str, limit: int = 800) -> str:
     """Normalize whitespace; only trim a truly runaway caption (a fallback dump
     of the whole description). Rich multi-sentence captions pass through — the
     top-scoring agents are detailed, and detail drives the accuracy score."""
