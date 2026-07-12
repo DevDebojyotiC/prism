@@ -495,7 +495,7 @@ export default function Page() {
                     {result.montage && <img className="montage-img" src={result.montage} alt="frame montage" />}
                     <div className="scan" />
                   </div>
-                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here), sent to the vision model at full resolution, in time order.</p>
+                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here), sent to the grounding race at full resolution, in time order.</p>
                 </div>
               </aside>
 

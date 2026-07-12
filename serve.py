@@ -74,7 +74,8 @@ def _run(vid_path: str, workdir: str) -> dict:
     _stt_pool.shutdown(wait=False)
 
     frames_dir = os.path.join(workdir, "frames")
-    default_n = 25 if gc.kimi_available() else 5   # demo always uses flow-montage grounding
+    # same as the graded pipeline's fast tier: 16 stills into the grounding race
+    default_n = 16 if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid_path, frames_dir, n_frames=n_frames)
     # the pipeline no longer needs a montage (individual high-res frames go to the
