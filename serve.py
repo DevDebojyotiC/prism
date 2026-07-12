@@ -143,7 +143,53 @@ def _run(vid_path: str, workdir: str) -> dict:
                 if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
                     keep.append({"start": i * SEG_SECS, "end": (i + 1) * SEG_SECS,
                                  "text": tr.strip()})
-            transcript_segments = keep  # windows WITH speech only; silent/music gaps stay caption-free
+            # refine run boundaries: a 14s chunk only says "speech somewhere in
+            # here", so probe 2s slivers (parallel) to find where speech actually
+            # starts/ends inside the first and last chunk of each contiguous run —
+            # otherwise captions open on the music that precedes the first word
+            def _sliver_speech(t0, t1):
+                out = {}
+                def _one(s):
+                    p = os.path.join(workdir, f"sl_{s:.0f}.wav")
+                    _sp.run(["ffmpeg", "-y", "-ss", str(s), "-t", "2", "-i", wav,
+                             "-ac", "1", "-ar", "16000", p], capture_output=True, timeout=20)
+                    try:
+                        tr = gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=40)
+                        return s, "NO_SPEECH" not in tr.upper() and len(tr.split()) >= 1
+                    except Exception:
+                        return s, True  # on probe failure, assume speech (fail open)
+                pts = [t0 + 2 * k for k in range(int((t1 - t0) / 2))]
+                with _TPE(max_workers=min(8, max(1, len(pts)))) as ex2:
+                    for s, has in ex2.map(_one, pts):
+                        out[s] = has
+                return out
+
+            if keep:
+                # group consecutive chunks into runs, refine each run's edges
+                runs, cur = [], [keep[0]]
+                for seg in keep[1:]:
+                    if seg["start"] == cur[-1]["end"]:
+                        cur.append(seg)
+                    else:
+                        runs.append(cur); cur = [seg]
+                runs.append(cur)
+                for run in runs:
+                    first, last = run[0], run[-1]
+                    sl = _sliver_speech(first["start"], first["end"])
+                    for s in sorted(sl):
+                        if sl[s]:
+                            first["start"] = s
+                            break
+                    sl = _sliver_speech(last["start"], last["end"]) if last is not first else sl
+                    for s in sorted(sl, reverse=True):
+                        if sl[s]:
+                            last["end"] = min(last["end"], s + 2)
+                            break
+            adur = video.probe_duration(wav)
+            if adur > 0:  # never let a window outrun the actual audio
+                for seg in keep:
+                    seg["end"] = min(seg["end"], round(adur, 1))
+            transcript_segments = keep  # speech windows, edges refined to ~2s
             transcript = " ".join(k["text"] for k in keep)
             if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
                 cut = transcript[:1400]
