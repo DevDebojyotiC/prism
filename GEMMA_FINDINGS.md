@@ -1,17 +1,31 @@
 # Gemma-4 Capability Findings — measured while building Prism
 
-Everything below was **measured by us, on live endpoints, during this hackathon** —
+Everything below was **measured by us, on live endpoints, while building Prism** —
 not quoted from documentation. Where a finding changed Prism's design, the design
 consequence is stated. Model under test: `google/gemma-4-31B-it` via HF Inference
-Providers (OpenAI-compatible), unless noted. Test scripts live in `test/`.
+Providers (OpenAI-compatible), unless noted. Evidence images live in
+[`findings/`](findings/); raw model outputs in `findings/*.json`.
+
+```mermaid
+flowchart LR
+    subgraph measured["What we measured"]
+        A["OCR limits<br/>(eye-chart test)"] --> E
+        B["latency & parallel<br/>scaling"] --> E
+        C["payload ceilings"] --> E
+        D["perception accuracy<br/>vs input resolution"] --> E
+    end
+    E["Prism's design:<br/>Gemma = language brain,<br/>high-res frames, parallel calls,<br/>frontier VLM for perception<br/>in accuracy mode"]
+```
 
 ---
 
 ## 1. Vision: OCR is genuinely strong — and saturates by ~896px
 
-**Method.** We rendered an "eye chart": seven rows of unique text at decreasing font
-sizes (64px down to 9px) on a 1600×1000 canvas, then asked Gemma-4 to transcribe
-every legible row at six different input resolutions.
+**Method.** We rendered an "eye chart" — seven rows of unique text at decreasing
+font sizes (64px down to 9px) on a 1600×1000 canvas — and asked Gemma-4 to
+transcribe every legible row at six different input resolutions.
+
+![eye chart used for the OCR test](findings/eyechart.png)
 
 | Input size (long edge) | Rows read (A=64px … G=9px) |
 |---|---|
@@ -27,9 +41,7 @@ every legible row at six different input resolutions.
 
 **Design consequence.** Prism samples frames at 768px — comfortably above the
 saturation knee, cheap to ship. Feeding Gemma *fewer, bigger* frames beats feeding
-it many small ones: our original 9-frame montage (~300px per cell) blinded the
-model to signage, jewelry, and facial detail that individual 768px frames recover
-(it went from "a city street" to reading the actual shop signs on the same clip).
+it many small ones (see §6 for the measured accuracy difference).
 
 ## 2. Speed: sub-second calls, near-perfect parallel scaling
 
@@ -79,11 +91,10 @@ call; whole-clip coverage comes from parallel calls (§2), not bigger requests.
   all four styled captions arrive as one valid JSON object per call. The one trap
   is the **token budget**: at `max_tokens=500` the *last* JSON key gets truncated
   and silently lost; 800 is reliably safe for four 40–120-word captions.
-- **Repetition degeneracy.** Small Gemma-4 checkpoints (e.g. 26B-A4B class) can
-  fall into repetition loops ("too many too many too many…") at temperature ≥0.7
-  with multi-image context. We built a lexical-variety/repeated-n-gram guard;
-  another Track-2 team (SEV-Cap) independently documented the same failure. The
-  31B dense model at ≤0.7 was stable throughout our runs.
+- **Repetition degeneracy.** Smaller Gemma-4 checkpoints can fall into repetition
+  loops ("too many too many too many…") at temperature ≥0.7 with multi-image
+  context; we added a lexical-variety / repeated-n-gram guard. The 31B dense model
+  at ≤0.7 was stable throughout our runs.
 
 ## 5. Style writing: the underrated strength
 
@@ -98,30 +109,69 @@ the supplied facts. Sampled outputs (full sets in the repo demo):
 > latency — a massive merge conflict between the red buses and the blue ones, and
 > the throughput is definitely not scaling."
 
-This is why Gemma is Prism's **load-bearing language brain**: every graded word in
-every Prism mode is authored by Gemma.
+It also **transcreates**: given the four captions and a target language, one call
+rewrites them natively while preserving each voice (the sarcasm stays dry in
+Hindi; the tech joke still lands in Japanese) — try the language selector in the
+demo UI. This is why Gemma is Prism's **load-bearing language brain**: every
+graded word in every Prism mode is authored by Gemma.
 
-## 6. The honest limit: perception, not language
+## 6. The honest limit: fine-grained perception — measured, with the actual frames
 
 Gemma-4's vision encoder compresses each image to ~256 tokens. On fine-grained
-perception it makes errors that **no prompt can fix**, because the information is
-lost before any instruction is read. Failure cases we reproduced repeatedly:
+perception it makes **systematic, reproducible errors** that no prompt can fix,
+because the information is lost before any instruction is read. We ran the
+grounding step repeatedly on the same clips and logged every output
+(`findings/gemma_ground_runs.json`, `findings/gemma_montage_runs.json`); ground
+truth was adjudicated by human inspection of the frames.
 
-- an afro puff hairstyle consistently described as a "high bun";
-- a plain pizza confidently given a "chicken topping";
-- a partially-visible billboard "read" as a brand name that isn't there.
+### Case 1 — the hairstyle (perception degrades with input resolution)
 
-We tried to prompt our way out — anti-hallucination "discipline" blocks, claim-by-
-claim verification, generic-wording fallbacks. Measured on the competition's real
-judge, **every prompting intervention made the score worse** (see §7): hedging
-trades away the specific, correct detail the judge rewards, without fixing the
-misperceptions.
+The subject's hairstyle is clearly a **natural afro puff** (rounded, textured —
+not a coiled bun):
 
-**Design consequence — the intentional split.** In Prism's accuracy mode (v10) a
+![office evidence frame — the hairstyle is an afro puff](findings/office_frame.jpg)
+
+| Input given to Gemma-4 | Runs | Said **"puff"** (closer) | Said **"bun"** (wrong) |
+|---|---|---|---|
+| 9-frame montage, ~300px per cell | 3 | 1 | **2** |
+| 5 individual frames @768px | 3 | 2 | **1** |
+
+Verbatim from a montage run: *"…her hair styled in a **high bun**…"* — and even at
+768px the error still appears in 1 of 3 runs. Higher resolution helps but does
+not eliminate the misread.
+
+### Case 2 — the pizza topping (over-confident specificity)
+
+![pizza evidence frame — toppings are not identifiable to species](findings/pizza_frame.jpg)
+
+In **3 of 3 runs** at 768px, Gemma-4 described *"melted cheese, **pieces of
+chicken**, and a white drizzle of sauce."* The drizzle is real; the chunks are
+visible but **not identifiable as chicken** from the pixels (they could equally be
+sausage or another topping). Gemma states an unverifiable specific with full
+confidence — the exact failure mode an accuracy-graded judge punishes.
+
+### What we tried, and what it did
+
+We attempted to prompt around this: anti-hallucination "discipline" blocks,
+claim-by-claim verification passes, fall-back-to-generic-wording rules. Measured
+on the competition's real judge, **every prompting intervention lowered the
+score** (§7): hedging removes the specific, correct detail the judge rewards
+without fixing the misperceptions, which happen in the encoder.
+
+```mermaid
+flowchart LR
+    A["frame pixels"] --> B["vision encoder<br/>(~256 tokens/image)"]
+    B -- "detail lost HERE" --> C["language model"]
+    D["prompt instructions"] --> C
+    C --> E["caption"]
+    style B stroke-dasharray: 5 5
+```
+
+**Design consequence — the intentional split.** In Prism's accuracy mode a
 frontier VLM handles *perception only* (one grounding call), while **Gemma authors
-100% of the caption text**. In pure-Gemma modes (v8/v9), Gemma does both jobs and
-lands ~0.80–0.82 on the live judge — respectable, and the gap to ~0.9 is almost
-entirely §6, not language quality. That is a measured, documented reason for the
+100% of the caption text**. In pure-Gemma mode, Gemma does both jobs and lands
+~0.80–0.82 on the live judge — respectable, and the gap to ~0.9 is almost entirely
+this section, not language quality. That is a measured, documented reason for the
 model split — not brand decoration.
 
 ## 7. A/B on the real judge: simplicity wins
@@ -140,8 +190,8 @@ All scores from the competition's live leaderboard, same team, same harness:
   The judge rewards specific, correct, detailed captions; machinery that constrains
   or hedges the model costs more than it saves.
 - Resubmitting the **identical image** scored 0.82 then 0.80: the judging pipeline
-  has **±0.02+ run-to-run noise on unchanged code** (we observed ±0.1 swings on
-  other teams). Deltas smaller than ~0.04 are not measurable on this leaderboard.
+  has **±0.02+ run-to-run noise on unchanged code**. Deltas smaller than ~0.04 are
+  not measurable on this leaderboard.
 - Offline proxy judges (a Gemini-based scorer, and frontier-model self-review)
   **over-predicted by ~0.07–0.11** and ranked variants in the wrong order. The only
   evaluator that counts is the real one.
@@ -153,11 +203,13 @@ All scores from the competition's live leaderboard, same team, same harness:
 | Capability | Measured verdict |
 |---|---|
 | Styled, tone-controlled writing | Excellent — four distinct voices, one call |
+| Multilingual transcreation | Excellent — tone survives the language switch |
 | Structured JSON output | Excellent (mind the token budget) |
 | OCR / on-screen text | Excellent at ≥512px input |
 | Latency & parallel scaling | ~0.9s/call; 6 parallel ≈ 1s |
-| Fine-grained visual perception | Real limits — pair with a frontier VLM when accuracy is graded |
+| Fine-grained visual perception | Real, reproducible limits — pair with a frontier VLM when accuracy is graded |
 | Robustness knobs | `reasoning_effort:"none"`, temp ≤0.7 multi-image, ≤5 images/call |
 
 Prism uses Gemma for exactly what it measured best at — and is transparent about
-the rest. Every number above is reproducible with the scripts in this repo.
+the rest. Every number above is reproducible: the evidence frames, raw model
+outputs, and test methodology are in this repo.

@@ -29,9 +29,9 @@ branding: this repo shows precisely what each model does.
 
 Why the split? Gemma-4's vision encoder has measurable perception limits (it read an afro
 puff as a "high bun"; no prompt can recover what the encoder never extracted — see
-[GEMMA_FINDINGS §6](GEMMA_FINDINGS.md)). Pairing Gemma with a frontier model *for perception
-only* is a documented, intentional engineering decision — the same division of labor used by
-the strongest Gemma-based entries in this competition. Set no `FIREWORKS_API_KEY` and Prism
+[GEMMA_FINDINGS §6](GEMMA_FINDINGS.md), evidence frames included). Pairing Gemma with a
+frontier model *for perception only* — while Gemma authors every word — is a documented,
+intentional engineering decision, not brand decoration. Set no `FIREWORKS_API_KEY` and Prism
 runs **pure-Gemma end to end**.
 
 ## How it works
