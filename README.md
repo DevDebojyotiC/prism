@@ -139,10 +139,12 @@ the demo's fact-anchor check). The family has obvious next steps:
 
 ## Notes
 - **Graded submission images:** `v10-scored` tag = the 0.87 run (quick 8-frame
-  grounding). `v11-scored` tag = the current head, which enables the flow-montage
-  grounding (`PRISM_FLOW=1`) and speech-aware grounding (`PRISM_STT=1`) inside
-  the image; both flags revert at runtime, and timing guards keep 4K clips under
-  the 30s budget. Everything else in later commits is demo and documentation.
+  grounding). `v14` = the final submission: flow-montage grounding
+  (`PRISM_FLOW=1`), speech-aware grounding (`PRISM_STT=1`), and a per-clip
+  time-budget system: the download is wall-capped, every model call carries an
+  absolute deadline, grounding degrades to fewer/smaller frames when the clock
+  runs short, and a hard axe guarantees the 30s/clip cap on any input (validated
+  on 6.5-minute and 4K clips). Both flags revert at runtime.
 - Track 2 injects no credentials, so model tokens are baked into the public image at build
   time. If you fork this, use disposable tokens and rotate them afterwards.
 - Built for `linux/amd64`; CPU-only; ~10–20s per clip, well within the 30 s/clip and 10 min budgets.
