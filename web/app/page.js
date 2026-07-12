@@ -480,13 +480,13 @@ export default function Page() {
                   {mTab === "sound" && result.heard && (
                     <>
                       <p className="desc">{result.heard}</p>
-                      <p className="tab-meta">what Gemma 3n hears in the soundtrack · {result.heard_via || "serverless"} · experimental, never graded fact</p>
+                      <p className="tab-meta">soundtrack heard by {result.audio_via || result.heard_via || "Gemma 3n"} · experimental, never graded fact</p>
                     </>
                   )}
                   {mTab === "transcript" && result.transcript && (
                     <>
                       <p className="desc">"{result.transcript}"</p>
-                      <p className="tab-meta">speech transcribed by Gemma 3n · appears only when the clip contains speech · drives the live captions on the source video</p>
+                      <p className="tab-meta">speech transcribed by {result.audio_via || "Gemma 3n"} · appears only when the clip contains speech · drives the live captions on the source video</p>
                     </>
                   )}
                 </div>

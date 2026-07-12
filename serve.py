@@ -92,6 +92,21 @@ def _run(vid_path: str, workdir: str) -> dict:
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
     heard, heard_via, transcript, transcript_segments = "", "", "", []
+    audio_via = {"v": ""}  # which engine actually served audio this run
+
+    def _hear_any(path, prompt="", max_tokens=90):
+        """Gemma 3n first; Gemini carries the feature when the 3n route flaps."""
+        try:
+            out = gc.hear(path, prompt, max_tokens=max_tokens)
+            audio_via["v"] = audio_via["v"] or "Gemma 3n serverless"
+            return out
+        except Exception:
+            out = gc.gemini_hear(path, prompt or (
+                "This is the soundtrack of a short video clip. In one or two "
+                "sentences, describe what you HEAR. Only report what is clearly "
+                "audible."), max_tokens=max_tokens)
+            audio_via["v"] = "Gemini (fallback; Gemma 3n hosting momentarily unavailable)"
+            return out
     try:
         wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
     except Exception:
@@ -109,9 +124,10 @@ def _run(vid_path: str, workdir: str) -> dict:
                     heard, heard_via = rr.json()["text"], "on AMD W7900"
             except Exception:
                 pass
-        if not heard:  # serverless: HF router -> Together serves the same 3n E4B
+        if not heard:  # serverless 3n, with Gemini carrying the feature on flaps
             try:
-                heard, heard_via = gc.hear(wav), "serverless"
+                heard = _hear_any(wav)
+                heard_via = audio_via["v"]
             except Exception:
                 pass
         # transcript: Gemma 3n's audio encoder ingests ~30s per input, so chunk
@@ -128,7 +144,7 @@ def _run(vid_path: str, workdir: str) -> dict:
 
             def _tr_one(p):
                 try:
-                    return gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
+                    return _hear_any(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
                 except Exception:
                     return ""
 
@@ -154,7 +170,7 @@ def _run(vid_path: str, workdir: str) -> dict:
                     _sp.run(["ffmpeg", "-y", "-ss", str(s), "-t", "2", "-i", wav,
                              "-ac", "1", "-ar", "16000", p], capture_output=True, timeout=20)
                     try:
-                        tr = gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=40)
+                        tr = _hear_any(p, gc.TRANSCRIBE_PROMPT, max_tokens=40)
                         return s, "NO_SPEECH" not in tr.upper() and len(tr.split()) >= 1
                     except Exception:
                         return s, True  # on probe failure, assume speech (fail open)
@@ -204,6 +220,7 @@ def _run(vid_path: str, workdir: str) -> dict:
         "anchors": anchors,
         "heard": heard,
         "heard_via": heard_via,
+        "audio_via": audio_via["v"],
         "transcript": transcript,
         "transcript_segments": transcript_segments,
         "description": description,

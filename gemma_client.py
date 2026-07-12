@@ -247,6 +247,30 @@ def hear(wav_path: str, prompt: str = "", timeout: int = 60, max_tokens: int = 9
     return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
+def gemini_hear(wav_path: str, prompt: str, timeout: int = 60,
+                max_tokens: int = 90) -> str:
+    """Demo-only audio fallback: when the hosted Gemma 3n route flaps (provider
+    availability comes and goes), Gemini carries the soundtrack/transcript
+    features so the demo never shows dead panels. Labeled as a fallback in the
+    UI; Gemma 3n stays the primary."""
+    import base64 as _b
+    key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GEMINI_KEY_1", "")
+    if not key:
+        raise RuntimeError("no GEMINI key for audio fallback")
+    b64 = _b.b64encode(open(wav_path, "rb").read()).decode("ascii")
+    r = requests.post(
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        headers={"Authorization": f"Bearer {key}"},
+        json={"model": "gemini-flash-latest", "max_tokens": max_tokens,
+              "messages": [{"role": "user", "content": [
+                  {"type": "text", "text": prompt},
+                  {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}]},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return (r.json()["choices"][0]["message"]["content"] or "").strip()
+
+
 def embed(texts, timeout: int = 30):
     """Sentence embeddings via EmbeddingGemma (google/embeddinggemma-300m) on the
     HF router. Used by the demo's fact-anchor check: is each styled caption still
