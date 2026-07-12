@@ -114,19 +114,38 @@ def _run(vid_path: str, workdir: str) -> dict:
                 heard, heard_via = gc.hear(wav), "serverless"
             except Exception:
                 pass
-        # transcript: only surfaces when the clip actually contains speech
+        # transcript: Gemma 3n's audio encoder ingests ~30s per input, so chunk
+        # the soundtrack into 28s segments and transcribe them in parallel
         try:
-            tr = gc.hear(wav, gc.TRANSCRIBE_PROMPT, max_tokens=512)
-            words = tr.split()
-            # degenerate-repetition guard: music beds sometimes "transcribe" as one
-            # token repeated dozens of times; real speech has lexical variety
-            degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
-            if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
-                transcript = tr
-                if len(transcript) > 900:  # trim at a sentence boundary, never mid-word
-                    cut = transcript[:900]
-                    dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
-                    transcript = cut[:dot + 1] if dot > 200 else cut.rsplit(" ", 1)[0] + "…"
+            import subprocess as _sp
+            from concurrent.futures import ThreadPoolExecutor as _TPE
+            seg_pat = os.path.join(workdir, "seg_%02d.wav")
+            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", "28",
+                     "-ac", "1", "-ar", "16000", seg_pat], capture_output=True, timeout=60)
+            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:5]
+            segs = [os.path.join(workdir, p) for p in segs] or [wav]
+
+            def _tr_one(p):
+                try:
+                    return gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=512)
+                except Exception:
+                    return ""
+
+            with _TPE(max_workers=len(segs)) as ex:
+                parts = list(ex.map(_tr_one, segs))
+            keep = []
+            for tr in parts:
+                words = tr.split()
+                # degenerate-repetition guard: music beds sometimes "transcribe" as
+                # one token repeated dozens of times; real speech has variety
+                degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
+                if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
+                    keep.append(tr.strip())
+            transcript = " ".join(keep)
+            if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
+                cut = transcript[:1400]
+                dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+                transcript = cut[:dot + 1] if dot > 300 else cut.rsplit(" ", 1)[0] + "…"
         except Exception:
             pass
 
