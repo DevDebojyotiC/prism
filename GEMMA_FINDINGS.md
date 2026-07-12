@@ -184,6 +184,7 @@ All scores from the competition's live leaderboard, same team, same harness:
 | v3 | + per-style rubrics, word caps, anti-hallucination discipline, few-shot | 0.74 |
 | v4 | + best-of-N candidates with a grounded selector, scene-detect sampling | 0.72 |
 | v2 (resubmitted unchanged) | no change | 0.80 |
+| v10 | same simple pipeline, frontier VLM grounds, Gemma still authors every word | **0.87** |
 
 **Findings.**
 - **Prompt sophistication regressed the score monotonically** (0.82 → 0.74 → 0.72).
@@ -195,6 +196,10 @@ All scores from the competition's live leaderboard, same team, same harness:
 - Offline proxy judges (a Gemini-based scorer, and frontier-model self-review)
   **over-predicted by ~0.07–0.11** and ranked variants in the wrong order. The only
   evaluator that counts is the real one.
+- **The perception thesis held.** Swapping only the grounding model, with Gemma
+  still authoring every word, moved the score from 0.80–0.82 to **0.87**: the
+  single largest gain we measured. Prompting changes never came close; changing
+  what the model *sees* did.
 
 ---
 
