@@ -128,14 +128,19 @@ export default function Page() {
     setPhase("input");
   }
 
-  // live captions: reveal the transcript in sync with video playback. Timing is
-  // proportional (words spread evenly across the clip), honest for short clips.
+  // live captions: each transcribed chunk carries its time window, so captions
+  // render only inside windows that contain speech (music/silence shows none),
+  // with words spread proportionally within their own window.
   function onTimeUpdate(e) {
-    const tr = result?.transcript;
+    const segs = result?.transcript_segments;
     const v = e.target;
-    if (!tr || !v?.duration) { return; }
-    const words = tr.split(/\s+/);
-    const upto = Math.floor(words.length * Math.min(1, v.currentTime / v.duration));
+    if (!segs?.length || !v?.duration) { return; }
+    const now = v.currentTime;
+    const seg = segs.find((s) => now >= s.start && now < s.end);
+    if (!seg) { setLiveCap(""); return; }
+    const words = seg.text.split(/\s+/);
+    const frac = (now - seg.start) / (seg.end - seg.start);
+    const upto = Math.max(1, Math.floor(words.length * Math.min(1, frac * 1.15)));
     const WINDOW = 14;
     setLiveCap(words.slice(Math.max(0, upto - WINDOW), upto).join(" "));
   }

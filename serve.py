@@ -91,7 +91,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
-    heard, heard_via, transcript = "", "", ""
+    heard, heard_via, transcript, transcript_segments = "", "", "", []
     try:
         wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
     except Exception:
@@ -119,29 +119,32 @@ def _run(vid_path: str, workdir: str) -> dict:
         try:
             import subprocess as _sp
             from concurrent.futures import ThreadPoolExecutor as _TPE
+            SEG_SECS = 14  # finer chunks = tighter live-caption alignment
             seg_pat = os.path.join(workdir, "seg_%02d.wav")
-            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", "28",
+            _sp.run(["ffmpeg", "-y", "-i", wav, "-f", "segment", "-segment_time", str(SEG_SECS),
                      "-ac", "1", "-ar", "16000", seg_pat], capture_output=True, timeout=60)
-            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:5]
+            segs = sorted(p for p in os.listdir(workdir) if p.startswith("seg_"))[:10]
             segs = [os.path.join(workdir, p) for p in segs] or [wav]
 
             def _tr_one(p):
                 try:
-                    return gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=512)
+                    return gc.hear(p, gc.TRANSCRIBE_PROMPT, max_tokens=400)
                 except Exception:
                     return ""
 
             with _TPE(max_workers=len(segs)) as ex:
                 parts = list(ex.map(_tr_one, segs))
             keep = []
-            for tr in parts:
+            for i, tr in enumerate(parts):
                 words = tr.split()
                 # degenerate-repetition guard: music beds sometimes "transcribe" as
                 # one token repeated dozens of times; real speech has variety
                 degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
                 if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
-                    keep.append(tr.strip())
-            transcript = " ".join(keep)
+                    keep.append({"start": i * SEG_SECS, "end": (i + 1) * SEG_SECS,
+                                 "text": tr.strip()})
+            transcript_segments = keep  # windows WITH speech only; silent/music gaps stay caption-free
+            transcript = " ".join(k["text"] for k in keep)
             if len(transcript) > 1400:  # trim at a sentence boundary, never mid-word
                 cut = transcript[:1400]
                 dot = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
@@ -156,6 +159,7 @@ def _run(vid_path: str, workdir: str) -> dict:
         "heard": heard,
         "heard_via": heard_via,
         "transcript": transcript,
+        "transcript_segments": transcript_segments,
         "description": description,
         "title": title,
         "montage": montage_uri,
