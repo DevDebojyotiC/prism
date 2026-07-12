@@ -81,7 +81,7 @@ def process_one(task: dict, workdir: str) -> dict:
     # detail, but too slow for the graded 30s/clip budget on 4K, so OFF by
     # default; the graded image behavior stays exactly v10's
     use_flow = os.environ.get("PRISM_FLOW", "0").strip().lower() in {"1", "true", "yes"}
-    if use_flow and dl_secs > 12:
+    if use_flow and dl_secs > 10:
         # slow (usually 4K) download already ate the budget: degrade to the quick
         # 8-frame grounding so the clip stays inside the 30s cap
         use_flow = False
@@ -98,7 +98,7 @@ def process_one(task: dict, workdir: str) -> dict:
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
-    if len(frames) >= 20 and time.time() - t_dl > 16:
+    if len(frames) >= 20 and time.time() - t_dl > 13:
         # second timing guard: download+extraction already used too much of the
         # 30s budget; fall back to quick grounding by thinning to ~8 stills
         frames = frames[::3]
