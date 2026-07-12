@@ -1,4 +1,4 @@
-# Demo API for Prism — a thin FastAPI wrapper around the SAME pipeline the graded
+# Demo API for Prism: a thin FastAPI wrapper around the SAME pipeline the graded
 # batch container runs (video + caption + gemma_client). This only drives the demo
 # frontend / recording; it is NOT part of the graded submission.
 # Run:  uvicorn serve:app --reload --port 8000
@@ -46,7 +46,7 @@ class TranslateReq(BaseModel):
     language: str
 
 
-# demo language selector — Gemma-4 covers 140+ languages; this is a showcase
+# demo language selector; Gemma-4 covers 140+ languages; this is a showcase
 # list, not a limit
 LANGUAGES = [
     "English", "Hindi", "Bengali", "Tamil", "Spanish", "French", "German",
@@ -67,7 +67,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid_path, frames_dir, n_frames=n_frames)
     # the pipeline no longer needs a montage (individual high-res frames go to the
-    # model) — build one purely for the demo's visual strip
+    # model); build one purely for the demo's visual strip
     montage_path = os.path.join(workdir, "montage.jpg")
     video.make_montage(frames, montage_path)
     t_frames = time.time() - t0
@@ -108,7 +108,7 @@ def samples():
 @app.post("/api/translate")
 def translate(req: TranslateReq):
     """Transcreate the four captions into the chosen language (Gemma, one call).
-    Tone must survive the language switch — that's the showcase."""
+    Tone must survive the language switch; that's the showcase."""
     if req.language.lower().startswith("english"):
         return {"captions": req.captions, "language": "English"}
     t0 = time.time()

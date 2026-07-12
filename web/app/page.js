@@ -50,7 +50,7 @@ export default function Page() {
 
   // Lock the optical axis (incoming beam → prism → output rays) to the vertical
   // center of the word "out" so the single beam cuts cleanly through it. The two
-  // are in separate grid columns, so this can't be done with static CSS — measure
+  // are in separate grid columns, so this can't be done with static CSS; measure
   // and re-measure on resize, font load, and layout changes.
   useEffect(() => {
     const align = () => {
@@ -63,7 +63,7 @@ export default function Page() {
       const sr = scene.getBoundingClientRect();
       if (sr.height === 0) return; // hero hidden (results view)
       // "Four voices out." can wrap; target the LAST visual line (where "out."
-      // sits), not the span's overall center — otherwise the beam lands in the
+      // sits), not the span's overall center, otherwise the beam lands in the
       // gap between lines. A Range gives one rect per line box.
       const range = document.createRange();
       range.selectNodeContents(out);
@@ -95,7 +95,7 @@ export default function Page() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [phase]);
 
-  // Indeterminate bar: eases asymptotically toward 92% and holds — it never
+  // Indeterminate bar: eases asymptotically toward 92% and holds; it never
   // completes on its own or loops. Driven per-frame (no CSS transition, which
   // wedges when triggered by the display:none→block reveal). The results view
   // replaces it the moment content arrives; resets to 0 for each new run.
@@ -150,7 +150,7 @@ export default function Page() {
       if (data.error) { setError(data.error); setPhase("input"); }
       else { setResult(data); setPhase("results"); window.scrollTo({ top: 0, behavior: "smooth" }); }
     } catch {
-      setError("Couldn't reach the Prism API — check the server is running, then refract again.");
+      setError("Couldn't reach the Prism API. Check the server is running, then refract again.");
       setPhase("input");
     }
   }
@@ -219,12 +219,12 @@ export default function Page() {
         {/* ══════ HERO ══════ */}
         <section className="hero">
           <div>
-            <div className="eyebrow">Gemma-4 vision · caption refraction</div>
+            <div className="eyebrow">Gemma-4 captioning · one clip, four voices</div>
             <h2>One clip in.<span className="out" ref={outRef}>Four voices out.</span></h2>
             <p>
-              Prism tiles your video into a single montage, lets <b>Gemma-4</b> watch it,
-              then refracts that one understanding into four caption styles —
-              and shows you <b>exactly what the model saw</b>.
+              Prism samples high-res frames from your video, grounds them into one
+              factual description, then <b>Gemma-4</b> refracts that one understanding
+              into four caption styles. You see <b>exactly what the model saw</b>.
             </p>
             <div className="swatches" aria-hidden="true">
               {STYLES.map((s) => (
@@ -317,7 +317,7 @@ export default function Page() {
                   <path d="M22 28V17m0 0-5 5m5-5 5 5" stroke="url(#lg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="big">Drop a clip here, or click to choose</div>
-                <div className="small"><b>MP4 · MOV · WebM</b> — same pipeline the grader runs</div>
+                <div className="small"><b>MP4 · MOV · WebM</b>, same pipeline the grader runs</div>
                 <input ref={fileRef} type="file" accept="video/*" hidden
                        onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); runUpload(f); } }} />
               </div>
@@ -393,7 +393,7 @@ export default function Page() {
                     {result.montage && <img className="montage-img" src={result.montage} alt="frame montage" />}
                     <div className="scan" />
                   </div>
-                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here) — sent to the vision model at full resolution, in time order.</p>
+                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here), sent to the vision model at full resolution, in time order.</p>
                 </div>
               </aside>
 
@@ -421,8 +421,8 @@ export default function Page() {
                   </select>
                   <span className="langnote">
                     {translating ? "Gemma is transcreating…"
-                      : lang !== "English" ? `tone preserved in ${lang} — by Gemma-4`
-                      : "Gemma speaks 140+ languages — try one"}
+                      : lang !== "English" ? `tone preserved in ${lang}, by Gemma-4`
+                      : "Gemma speaks 140+ languages. Try one"}
                   </span>
                 </div>
                 <div className="voices" style={translating ? { opacity: 0.45 } : undefined}>
@@ -455,19 +455,19 @@ export default function Page() {
 
         <section className="faq">
           <div className="rule" />
-          <h2 className="faq-title">Straight answers <span className="faq-sub">— what judges (and skeptics) ask us</span></h2>
+          <h2 className="faq-title">Straight answers <span className="faq-sub">· what judges (and skeptics) ask us</span></h2>
           {[
             {
               q: "Is this really Gemma, or is Gemma just branding?",
-              a: "Really Gemma. Every graded word — all four caption styles, every clip — is authored by Gemma-4-31B in one structured-JSON call. The code path is public: gemma_client.py (the 3-tier Gemma failover) and caption.py stylize(). No other model writes a single word the judge sees.",
+              a: "Really Gemma. Every graded word, all four caption styles on every clip, is authored by Gemma-4-31B in one structured-JSON call. The code path is public: gemma_client.py (the 3-tier Gemma failover) and caption.py stylize(). No other model writes a single word the judge sees.",
             },
             {
               q: "Then what does the frontier vision model do?",
-              a: "Perception only, in accuracy mode: one grounding call turns 8 frames into a factual description, and that's where its job ends. Gemma turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end — same pipeline, Gemma does both jobs.",
+              a: "Perception only, in accuracy mode: one grounding call turns 8 frames into a factual description, and that's where its job ends. Gemma turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end: same pipeline, Gemma does both jobs.",
             },
             {
               q: "Why not use Gemma for vision too?",
-              a: "We did — and we measured why it costs accuracy. Gemma-4's encoder compresses each image to ~256 tokens and makes reproducible fine-grained errors (it read an afro puff as a 'high bun'; it names unverifiable pizza toppings with full confidence). No prompt can recover what the encoder never extracted. The full evidence — frames included — is in GEMMA_FINDINGS.md.",
+              a: "We did, and we measured why it costs accuracy. Gemma-4's encoder compresses each image to ~256 tokens and makes reproducible fine-grained errors (it read an afro puff as a 'high bun'; it names unverifiable pizza toppings with full confidence). No prompt can recover what the encoder never extracted. The full evidence, frames included, is in GEMMA_FINDINGS.md.",
             },
             {
               q: "How do the four styles stay genuinely different?",
@@ -479,7 +479,7 @@ export default function Page() {
             },
             {
               q: "Can it caption in my language?",
-              a: "Yes — pick one from the selector above the caption cards. Gemma transcreates all four captions in one call, preserving each voice: the sarcasm stays dry in Hindi, the tech joke still lands in Japanese. Gemma covers 140+ languages; we surface sixteen in the demo.",
+              a: "Yes: pick one from the selector above the caption cards. Gemma transcreates all four captions in one call, preserving each voice: the sarcasm stays dry in Hindi, the tech joke still lands in Japanese. Gemma covers 140+ languages; we surface sixteen in the demo.",
             },
           ].map((f, i) => (
             <details key={i} className="faq-item">

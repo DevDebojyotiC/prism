@@ -1,6 +1,6 @@
 """Video I/O: download a clip, sample frames, extract audio.
 
-Frames are downscaled hard (long side ~512px, JPEG) — Gemma-4 doesn't need 4K,
+Frames are downscaled hard (long side ~512px, JPEG); Gemma-4 doesn't need 4K,
 and small frames cut both upload time and vision token cost, which matters for
 the ≤30s/clip and $50-credit budgets. Audio is mono 16 kHz for Whisper.
 """
@@ -37,7 +37,7 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
                    max_side: int = 768) -> List[str]:
     """Sample n frames evenly, skipping the first/last 5% (black intro/outro), at
     full-ish resolution as INDIVIDUAL images. The strongest Track-2 agents feed
-    the vision model a few HIGH-RES frames, not a low-res montage — Gemma reads
+    the vision model a few HIGH-RES frames, not a low-res montage; Gemma reads
     text and fine detail far better this way."""
     os.makedirs(out_dir, exist_ok=True)
     dur = probe_duration(path)
@@ -67,7 +67,7 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
 
 
 def frames_for_duration(dur: float) -> int:
-    """Adaptive frame budget — longer clips get a denser montage grid so a
+    """Adaptive frame budget: longer clips get a denser montage grid so a
     2-minute video isn't summarized from the same 9 frames as a 20s one. The grid
     auto-derives square (√n) in make_montage: 9→3x3, 16→4x4, 25→5x5. Montage
     resolution scales with the grid, so bigger grids keep cells legible.
@@ -89,7 +89,7 @@ def make_montage(frame_paths: List[str], dest: str, cols: Optional[int] = None,
     Managed vision endpoints cap request payload size, so sending many base64
     frames 413s. A single JPEG montage compresses well (~70-100KB even at 16-20
     frames) and stays far under the limit while giving the temporal coverage a
-    30s-2min clip needs — calibrated on 1-3 min clips. cols defaults to a
+    30s-2min clip needs, calibrated on 1-3 min clips. cols defaults to a
     roughly-square grid so cells stay legible.
     """
     from PIL import Image

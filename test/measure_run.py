@@ -33,7 +33,7 @@ try:
     print(f"[warmup] {time.time()-t:.1f}s -> {r!r}")
 except Exception as e:
     print(f"[warmup] FAILED: {e!r}")
-    print("If 404: the deployed model ID differs — send me the exact model path "
+    print("If 404: the deployed model ID differs; use the exact model path "
           "from the deployment page and I'll set PRISM_FW_MODEL.")
     raise SystemExit(1)
 
@@ -56,4 +56,4 @@ with tempfile.TemporaryDirectory() as wd:
 
 json.dump(results, open(os.path.join(ROOT, "output", "measure_results.json"), "w"),
           ensure_ascii=False, indent=2)
-print("\n[done] saved output/measure_results.json — now DELETE the deployment to stop billing.")
+print("\n[done] saved output/measure_results.json; now DELETE the deployment to stop billing.")

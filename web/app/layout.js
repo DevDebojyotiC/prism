@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Prism — One clip, four voices",
+  title: "Prism - One clip, four voices",
   description:
     "Prism refracts a single video into four caption styles with Gemma-4.",
 };

@@ -1,5 +1,5 @@
 """The four caption styles. Sharp, contrastive definitions with a worked
-example and an anti-example each — the judge scores "style match", so every
+example and an anti-example each; the judge scores "style match", so every
 voice must be unmistakably different from the others and land its intent.
 
 The example/anti-example pairs are few-shot guidance: they show the model the
@@ -15,7 +15,7 @@ STYLE_GUIDE = {
         "def": (
             "Two or three polished, information-dense sentences. Professional, "
             "objective, factual; neutral register, no slang, no jokes, no first "
-            "person — like a documentary voiceover. Pack in the concrete details "
+            "person, like a documentary voiceover. Pack in the concrete details "
             "from the description: specific subjects (with counts/colors), actions "
             "and their direction, the setting, lighting, and notable objects."
         ),
@@ -30,14 +30,14 @@ STYLE_GUIDE = {
             "should still hook onto a real, specific detail from the video."
         ),
         "good": "Groundbreaking footage of a man pouring milk into a cup, surely destined for every film-school syllabus.",
-        "bad": "A barista makes latte art in a cup.  (this is just neutral/formal — no irony at all)",
+        "bad": "A barista makes latte art in a cup.  (this is just neutral/formal, no irony at all)",
     },
     "humorous_tech": {
         "def": (
             "One or two punchy, genuinely funny sentences built on a SPECIFIC "
             "tech/programming metaphor (bug, deploy, merge conflict, infinite "
             "loop, cache miss, 404, rubber-duck, CI pipeline, hotfix). The joke "
-            "must actually land — the metaphor should map onto what's happening, "
+            "must actually land; the metaphor should map onto what's happening, "
             "not just sprinkle tech words on top. Keep it tight; don't ramble."
         ),
         "good": "He's rubber-ducking the espresso machine, hoping it'll finally explain why the foam keeps throwing exceptions. Third redeploy this morning and the latte art still won't render.",
@@ -46,12 +46,12 @@ STYLE_GUIDE = {
     "humorous_non_tech": {
         "def": (
             "One or two punchy, genuinely funny sentences using everyday, "
-            "universal humor — food, pets, moods, weekends, chores, "
+            "universal humor: food, pets, moods, weekends, chores, "
             "procrastination, relationships. ZERO technical or programming words. "
             "Keep it tight; land the joke, don't ramble."
         ),
         "good": "This latte art is the single most productive thing anyone in this cafe will accomplish before noon.",
-        "bad": "The barista's coffee is buffering like a slow download.  (uses a tech metaphor — that belongs to humorous_tech)",
+        "bad": "The barista's coffee is buffering like a slow download.  (uses a tech metaphor; that belongs to humorous_tech)",
     },
 }
 

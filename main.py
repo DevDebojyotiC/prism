@@ -1,4 +1,4 @@
-# Prism entrypoint — this is the file the Track 2 Docker harness runs.
+# Prism entrypoint: this is the file the Track 2 Docker harness runs.
 # It reads /input/tasks.json  ([{task_id, video_url, styles}]), captions each clip
 # in the requested styles, and writes /output/results.json  ([{task_id, captions}]).
 # Every task is handled in isolation: if one clip fails we still emit all four
@@ -32,11 +32,11 @@ USE_VERIFY = os.environ.get("PRISM_VERIFY", "1").strip().lower() in {"1", "true"
 
 
 # When the pipeline fails outright (no description to ground from), emit four
-# DISTINCT, in-style generic captions rather than the same string four times —
+# DISTINCT, in-style generic captions rather than the same string four times;
 # identical captions score ~0 on style-match, distinct ones floor much higher.
 _GENERIC_FALLBACK = {
     "formal": "A short video clip depicting a brief real-world scene.",
-    "sarcastic": "Wow, an entire video clip — truly groundbreaking visual content.",
+    "sarcastic": "Wow, an entire video clip, truly groundbreaking visual content.",
     "humorous_tech": "Just a short clip buffering its way through a few seconds of runtime.",
     "humorous_non_tech": "A little clip that's over before you can even grab the popcorn.",
 }
@@ -66,7 +66,7 @@ def process_one(task: dict, workdir: str) -> dict:
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
     if USE_AUDIO:
-        import transcribe as tr  # imported lazily — only needed when audio is on
+        import transcribe as tr  # imported lazily; only needed when audio is on
         audio = video.extract_audio(vid, os.path.join(workdir, f"{tid}.wav"))
         if audio:
             transcript = tr.transcribe(audio)
@@ -76,7 +76,7 @@ def process_one(task: dict, workdir: str) -> dict:
 
     description = caption.ground(frames, transcript)
     # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
-    # weaker model second-guess it — DescribeX ships no verify at all
+    # weaker model second-guess it
     if USE_VERIFY and gc.LAST_BACKEND != "kimi":
         description = caption.verify(frames, description)
     return caption.stylize(description, styles)
@@ -105,7 +105,7 @@ def main() -> int:
             for s in styles:
                 caps.setdefault(s, "A short video clip.")
             results.append({"task_id": tid, "captions": caps})
-            # flag clips that fell back to a generic caption — the thing that
+            # flag clips that fell back to a generic caption, the thing that
             # quietly drags the average down when the model call fails at grading
             fell_back = any(v in set(_GENERIC_FALLBACK.values()) for v in caps.values())
             print(f"[prism] {tid} done in {time.time()-t0:.1f}s "

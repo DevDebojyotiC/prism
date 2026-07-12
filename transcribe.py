@@ -1,6 +1,6 @@
 """Local audio transcription via faster-whisper (CPU, int8).
 
-Self-contained — no external API or credential. The model is baked into the
+Self-contained: no external API or credential. The model is baked into the
 image at build. Transcription is a grounding aid: any failure returns "" and the
 pipeline falls back to frames-only grounding.
 """

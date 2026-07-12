@@ -353,7 +353,7 @@ body[data-state="loading"] .panel, body[data-state="loading"] .tabs{display:none
   background:linear-gradient(90deg,rgba(var(--ray-rgb),.95) 55%,var(--formal) 70%,var(--sarcastic) 80%,var(--tech) 90%,var(--nontech));
   box-shadow:0 0 14px rgba(var(--ray-rgb),.35);
   /* Indeterminate progress: scaleX is driven per-frame from JS (see page.js) and
-     eases asymptotically toward ~0.92 — it never reaches full on its own, and is
+     eases asymptotically toward ~0.92; it never reaches full on its own, and is
      replaced by the results view the instant content arrives. No CSS transition:
      a transition triggered by the display:none→block reveal wedges at its start. */
 }
@@ -387,7 +387,7 @@ body[data-state="results"] .io{display:none}
 
 .res-grid{display:grid;grid-template-columns:clamp(280px,27vw,340px) minmax(0,1fr);gap:clamp(14px,1.6vw,20px);align-items:start}
 
-/* left — evidence column */
+/* left: evidence column */
 .evidence{position:sticky;top:22px;display:flex;flex-direction:column;gap:0;
   border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
   background:linear-gradient(180deg,var(--card-hi),var(--card-lo));
@@ -455,7 +455,7 @@ body[data-state="results"] .io{display:none}
 .ground .ev-k{margin-bottom:8px}
 .ground .ev-k::after{content:none}
 
-/* right — the four voices */
+/* right: the four voices */
 /* equal-height rows so uneven caption lengths never make the grid look ragged */
 .voices{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:clamp(12px,1.5vh,16px)}
 .voice{

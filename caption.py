@@ -1,4 +1,4 @@
-"""Ground once, restyle four ways — both stages on Gemma-4.
+"""Ground once, restyle four ways. Both stages run on Gemma-4.
 
 Stage 1 (vision): Gemma-4 looks at the frames (+ audio transcript) and writes a
 single specific, factual description of the clip. Grounding once keeps all four
@@ -23,15 +23,15 @@ _GROUND_PROMPT = (
     "order.\n"
     "Write a DETAILED, factual description of the video as a whole. Pack in "
     "concrete, verifiable detail:\n"
-    "- the setting and location — if you recognize the specific city, country, or "
+    "- the setting and location; if you recognize the specific city, country, or "
     "a famous landmark, name it; the time of day and lighting;\n"
-    "- the main subject(s), specifically — count them, and note colors, types, "
+    "- the main subject(s), specifically: count them, and note colors, types, "
     "posture/expression, gaze direction, and distinguishing features;\n"
     "- what happens across the clip: actions, movement and its direction, and "
     "camera behavior (static vs moving, panning, zooming);\n"
     "- the capture technique and any motion effects (e.g. time-lapse, slow motion, "
     "motion-blurred subjects);\n"
-    "- notable objects — their SPECIFIC type and state/condition (e.g. a sliced "
+    "- notable objects: their SPECIFIC type and state/condition (e.g. a sliced "
     "pizza, an empty bench, an open door), not just generic terms like 'cars' or "
     "'boats'; background landmarks or buildings; and any text or signs you can "
     "read (even if partially legible); plus the overall mood;\n"
@@ -50,7 +50,7 @@ _KIMI_IMAGES = 8
 def ground(frame_paths: List[str], transcript: str = "",
            montage_out: Optional[str] = None) -> str:
     """Grounding: Kimi (frontier vision, 8 frames) when configured, else Gemma
-    (5 frames). Styling downstream is always Gemma — Kimi only reports facts."""
+    (5 frames). Styling downstream is always Gemma; Kimi only reports facts."""
     prompt = _GROUND_PROMPT
     if transcript:
         prompt += f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
@@ -68,7 +68,7 @@ _VERIFY_PROMPT = (
     "frames and produce a corrected version:\n"
     "- remove or fix anything that is wrong or not actually visible;\n"
     "- add important detail that the draft missed, ESPECIALLY what HAPPENS across "
-    "the clip — actions, motion and its direction, and how the scene changes from "
+    "the clip: actions, motion and its direction, and how the scene changes from "
     "the first frames to the last;\n"
     "- keep it specific, factual, and 4-6 sentences.\n"
     "Return ONLY the corrected description.\n\nDraft:\n\"\"\"\n{desc}\n\"\"\""
@@ -77,7 +77,7 @@ _VERIFY_PROMPT = (
 
 def verify(frame_paths: List[str], description: str,
            montage_path: Optional[str] = None) -> str:
-    """Second look — re-check the grounded description against the same frames and
+    """Second look: re-check the grounded description against the same frames and
     correct/enrich it (Raccoon's approach)."""
     prompt = _VERIFY_PROMPT.format(desc=description)
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=560)
@@ -92,7 +92,7 @@ def stylize(description: str, styles: List[str]) -> dict:
         f"Write ONE caption for the video in EACH of these styles. Every caption must stay "
         f"faithful to the description above (same subjects and actions) while nailing its style:\n"
         f"{guide}\n\n"
-        f"Make the four captions clearly DISTINCT from each other — different wording, angle, "
+        f"Make the four captions clearly DISTINCT from each other: different wording, angle, "
         f"and rhythm, not four rephrasings of the same sentence. Pack in specific, concrete "
         f"detail from the description; vague captions score poorly.\n"
         f"Return ONLY a JSON object with exactly these keys: {keys}. Each value is a caption "
@@ -106,7 +106,7 @@ def stylize(description: str, styles: List[str]) -> dict:
         max_tokens=800, temperature=0.7,
         response_format={"type": "json_object"},
     )
-    # Fallback is a SHORT grounded sentence, never the whole description — keeps
+    # Fallback is a SHORT grounded sentence, never the whole description; keeps
     # every card compact even when a style is missing.
     return _parse(raw, ordered, _short(description, 150))
 
@@ -122,7 +122,7 @@ def _short(text: str, limit: int) -> str:
 
 def _tidy(val: str, limit: int = 800) -> str:
     """Normalize whitespace; only trim a truly runaway caption (a fallback dump
-    of the whole description). Rich multi-sentence captions pass through — the
+    of the whole description). Rich multi-sentence captions pass through; the
     top-scoring agents are detailed, and detail drives the accuracy score."""
     val = " ".join(val.split())
     return val if len(val) <= limit else _short(val, limit)
@@ -144,20 +144,20 @@ def _parse(raw: str, styles: List[str], fallback: str) -> dict:
 
 def translate_captions(captions: dict, language: str) -> dict:
     """Demo-only: transcreate the four captions into another language with Gemma.
-    Not translation — TRANSCREATION: each caption must keep its style's voice
+    Not translation but TRANSCREATION: each caption must keep its style's voice
     (sarcasm stays dry, the tech pun still lands, formal stays formal). Showcases
     Gemma's multilingual tone control; never part of the graded output."""
     keys = ", ".join(f'"{k}"' for k in captions)
     block = "\n".join(f"{k}: {v}" for k, v in captions.items())
     user = (
         f"Transcreate each of these video captions into {language}. Do NOT translate "
-        f"word-for-word — rewrite each one the way a native {language} copywriter "
+        f"word-for-word; rewrite each one the way a native {language} copywriter "
         f"would, PRESERVING its style: 'formal' stays professional and precise, "
         f"'sarcastic' stays dry and ironic, 'humorous_tech' keeps a tech joke that "
         f"lands in {language}, 'humorous_non_tech' keeps everyday humor with no tech "
         f"jargon. Keep proper nouns and readable on-screen text as-is. Keep each "
         f"caption about the same length as the original.\n\n{block}\n\n"
-        f"Return ONLY a JSON object with exactly these keys: {keys} — each value the "
+        f"Return ONLY a JSON object with exactly these keys: {keys}, each value the "
         f"{language} caption. No extra text."
     )
     raw = gc.chat([{"role": "user", "content": user}],
@@ -170,12 +170,12 @@ def translate_captions(captions: dict, language: str) -> dict:
 
 def make_title(description: str) -> str:
     """A short, human-readable video name derived from the description (demo UI
-    only — not part of the graded caption output)."""
+    only, not part of the graded caption output)."""
     try:
         raw = gc.chat(
             [{"role": "user", "content":
               "Write a short, catchy title (3 to 6 words) for this video, like a "
-              "headline or a filename. Reply with ONLY the title — no quotes, no "
+              "headline or a filename. Reply with ONLY the title, with no quotes and no "
               "trailing period.\n\n"
               f"Video: {description[:600]}"}],
             max_tokens=24, temperature=0.5,

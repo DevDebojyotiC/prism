@@ -1,20 +1,20 @@
-# Prism — One clip, four voices, one Gemma brain
+# Prism: one clip, four voices, one Gemma brain
 
-Prism is a video-captioning agent built for the **AMD Developer Hackathon ACT II — Track 2**.
-It refracts a single video into four audience-tuned captions — **formal, sarcastic,
-humorous-tech, humorous-non-tech** — like a prism splitting light. Every graded word is
+Prism is a video-captioning agent built for the **AMD Developer Hackathon ACT II, Track 2**.
+It refracts a single video into four audience-tuned captions (**formal, sarcastic,
+humorous-tech, humorous-non-tech**) like a prism splitting light. Every graded word is
 authored by **Google's Gemma-4-31B**: it writes all four voices in a single structured-JSON
 call, holds tone without drifting off-facts, and scales to six concurrent calls in about a
-second. We chose Gemma deliberately, and we can prove why — because we **measured** it. Our
+second. We chose Gemma deliberately, and we can prove why, because we **measured** it. Our
 [**GEMMA_FINDINGS**](GEMMA_FINDINGS.md) report documents where Gemma-4 excels (9-pixel OCR at
-≥512px inputs, sub-second latency, near-perfect parallel scaling, rock-solid JSON compliance,
-genuinely good stylistic writing) and where its vision encoder hits real limits — which is
+≥512px inputs, sub-second latency, near-perfect parallel scaling, dependable JSON output,
+genuinely good stylistic writing) and where its vision encoder hits real limits. That is
 exactly why, in our accuracy mode, a frontier vision model handles *perception only* while
 **Gemma remains the load-bearing language brain that crafts 100% of the captions**. No fake
 branding: this repo shows precisely what each model does.
 
-> *"A whole, pre-sliced pizza with a golden-brown crust… a hand sprinkles parmesan across the surface."* — **formal**
-> *"Applying a hotfix of parmesan to the production environment, hopefully without crashing the crust."* — **tech-humor**
+> *"A whole, pre-sliced pizza with a golden-brown crust… a hand sprinkles parmesan across the surface."* (**formal**)
+> *"Applying a hotfix of parmesan to the production environment, hopefully without crashing the crust."* (**tech-humor**)
 
 ---
 
@@ -22,15 +22,15 @@ branding: this repo shows precisely what each model does.
 
 | Role | Model | Notes |
 |---|---|---|
-| **Caption authorship — every graded word, all four styles** | **Gemma-4-31B-it** | One structured-JSON call, `reasoning_effort:"none"`, temp 0.7 |
+| **Caption authorship: every graded word, all four styles** | **Gemma-4-31B-it** | One structured-JSON call, `reasoning_effort:"none"`, temp 0.7 |
 | Perception / grounding (accuracy mode, default) | Kimi-k2p6 (Fireworks serverless) | One call over 8 × 768px frames; reports facts only, writes nothing the judge sees |
 | Perception / grounding (pure-Gemma mode) | Gemma-4-31B-it | 5 × 768px frames (the managed endpoint's per-call image cap) |
 | Failover styling | Gemma-4 via Fireworks → Gemma-3 (AMD-hosted) | 3-tier chain; retries on transient errors |
 
 Why the split? Gemma-4's vision encoder has measurable perception limits (it read an afro
-puff as a "high bun"; no prompt can recover what the encoder never extracted — see
+puff as a "high bun"; no prompt can recover what the encoder never extracted; see
 [GEMMA_FINDINGS §6](GEMMA_FINDINGS.md), evidence frames included). Pairing Gemma with a
-frontier model *for perception only* — while Gemma authors every word — is a documented,
+frontier model *for perception only*, while Gemma authors every word, is a documented,
 intentional engineering decision, not brand decoration. Set no `FIREWORKS_API_KEY` and Prism
 runs **pure-Gemma end to end**.
 
@@ -48,8 +48,8 @@ flowchart LR
 ```
 
 *Ground once, restyle four ways*: one factual description keeps every caption faithful to the
-same facts while each voice lands its own tone. The pipeline is deliberately simple — two
-model calls per clip — because we A/B-tested sophistication on the live judge and **simple
+same facts while each voice lands its own tone. The pipeline is deliberately simple, two
+model calls per clip, because we A/B-tested sophistication on the live judge and **simple
 won** (rubric machinery and best-of-N selection measurably lowered the real score; the full
 experiment log is in [GEMMA_FINDINGS §7](GEMMA_FINDINGS.md)).
 
@@ -90,12 +90,12 @@ cd web && npm install && npm run dev   # frontend at http://localhost:3000
 
 | File | Purpose |
 |---|---|
-| `main.py` | Entry point — reads `/input/tasks.json`, writes `/output/results.json` |
+| `main.py` | Entry point: reads `/input/tasks.json`, writes `/output/results.json` |
 | `video.py` | Download + high-res individual frame sampling |
 | `caption.py` | Ground-once-restyle-four + the demo title helper |
 | `styles.py` | The four caption styles (definitions + examples) |
 | `gemma_client.py` | Gemma-4 client (3-tier failover) + the Kimi grounding call |
-| `GEMMA_FINDINGS.md` | **Measured Gemma-4 capability research** — OCR limits, scaling, payload caps, real-judge A/Bs |
+| `GEMMA_FINDINGS.md` | **Measured Gemma-4 capability research**: OCR limits, scaling, payload caps, real-judge A/Bs |
 | `transcribe.py` | Optional local audio transcription (off by default) |
 | `serve.py` | FastAPI demo backend |
 | `web/` | Next.js demo frontend |

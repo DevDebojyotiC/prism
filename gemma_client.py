@@ -1,11 +1,11 @@
 """Gemma client with a 3-tier failover chain (all Gemma, all OpenAI-compatible):
 
-  1. HF Inference Providers (Novita et al.) — Gemma-4, MANAGED/serverless, always
+  1. HF Inference Providers (Novita et al.): Gemma-4, MANAGED/serverless, always
      up. Primary: handles grading reliably with nothing of ours to keep warm.
-  2. Fireworks — Gemma-4 via our deployment. Fallback 1 (only if a Fireworks
+  2. Fireworks: Gemma-4 via our deployment. Fallback 1 (only if a Fireworks
      Gemma endpoint is live).
   3. AMD-hosted Gemma-3 on the W7900 via ngrok. Fallback 2 (only while the pod +
-     tunnel are up — dev/demo).
+     tunnel are up; dev/demo).
 
 Each backend is skipped if unconfigured. Tried in order; first success wins.
 Gemma-4 defaults to a "thinking" mode that returns content=null, so we send
@@ -42,7 +42,7 @@ class Backend:
 
 def _backends() -> List[Backend]:
     out = []
-    # 1) PRIMARY — HF Inference Providers (managed Gemma-4).
+    # 1) PRIMARY: HF Inference Providers (managed Gemma-4).
     hf = Backend(
         name="hf",
         base_url=os.environ.get("HF_BASE_URL", "https://router.huggingface.co/v1").rstrip("/"),
@@ -53,7 +53,7 @@ def _backends() -> List[Backend]:
     )
     if hf.usable:
         out.append(hf)
-    # 2) FALLBACK 1 — Fireworks Gemma-4 (our deployment).
+    # 2) FALLBACK 1: Fireworks Gemma-4 (our deployment).
     fw = Backend(
         name="fireworks",
         base_url=os.environ.get("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1").rstrip("/"),
@@ -64,7 +64,7 @@ def _backends() -> List[Backend]:
     )
     if fw.usable:
         out.append(fw)
-    # 3) FALLBACK 2 — AMD-hosted Gemma-3 via ngrok (vLLM on the W7900).
+    # 3) FALLBACK 2: AMD-hosted Gemma-3 via ngrok (vLLM on the W7900).
     amd = Backend(
         name="amd",
         base_url=(os.environ.get("AMD_GEMMA_BASE_URL", "").rstrip("/")),
@@ -103,7 +103,7 @@ def _post_chat(b: Backend, messages: list, max_tokens: int, temperature: float,
 
 
 # Transient HTTP statuses worth retrying (rate limit / gateway / overload).
-# 402 (payment) and 4xx like 400/401/413 are NOT transient — fail over instead.
+# 402 (payment) and 4xx like 400/401/413 are NOT transient; fail over instead.
 _TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 _BACKOFF = (1.0, 3.0)  # sleeps between attempts; total <30s/request budget
 
@@ -187,7 +187,7 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                 r.raise_for_status()
                 msg = r.json()["choices"][0]["message"]
                 out = (msg.get("content") or "").strip()
-                # Kimi is a reasoning model — strip any leaked thinking trace
+                # Kimi is a reasoning model; strip any leaked thinking trace
                 if "</think>" in out:
                     out = out.split("</think>", 1)[1].strip()
                 if out:

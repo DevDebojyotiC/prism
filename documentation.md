@@ -1,4 +1,4 @@
-## Title: Prism — Video Captioning Agent
+## Title: Prism - Video Captioning Agent
 
 ### Language
 **Python** (agent + backend) · **JavaScript / Next.js** (demo frontend)
@@ -41,7 +41,7 @@
 
 ### Description
 
-Prism is a video-captioning agent built for **AMD Developer Hackathon ACT II — Track 2**.
+Prism is a video-captioning agent built for **AMD Developer Hackathon ACT II, Track 2**.
 Given a short video clip, it writes **four captions of the same clip in four different
 styles** (formal, sarcastic, humorous-tech, humorous-everyday), all powered by Google's
 **Gemma-4** vision model served through HuggingFace Inference Providers.
@@ -66,7 +66,7 @@ each one nails its own voice.
 
 3. **`video.frames_for_duration(dur)`**
     - **Arguments**: `dur` (clip length in seconds).
-    - **Description**: Picks the frame budget by length — 9 (3x3) up to 30s, 16 (4x4) up to 90s, 25 (5x5) beyond.
+    - **Description**: Picks the frame budget by length: 9 (3x3) up to 30s, 16 (4x4) up to 90s, 25 (5x5) beyond.
 
 4. **`video.make_montage(frame_paths, dest)`**
     - **Arguments**: `frame_paths` (the sampled frames), `dest` (output image).
@@ -102,12 +102,12 @@ each one nails its own voice.
   - `Pillow`: builds the montage image from the sampled frames.
   - `python-dotenv`: loads the `.env` config for local runs.
   - `fastapi` + `uvicorn`: the demo API in `serve.py`.
-- **System**: `ffmpeg` (frame extraction) — installed inside the Docker image.
+- **System**: `ffmpeg` (frame extraction), installed inside the Docker image.
 
 ---
 
 ### Project Structure
-- **`main.py`**: The entry point — reads `/input/tasks.json`, writes `/output/results.json`.
+- **`main.py`**: The entry point: reads `/input/tasks.json`, writes `/output/results.json`.
 - **`video.py`**: Download, frame sampling, and montage building.
 - **`caption.py`**: Ground-once-restyle-four, plus the demo title helper.
 - **`styles.py`**: The four caption styles (definitions + examples).
