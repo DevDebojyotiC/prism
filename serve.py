@@ -252,7 +252,10 @@ def tts(req: TTSReq):
     try:
         from gradio_client import Client
         if _tts["client"] is None:
-            _tts["client"] = Client("Aratako/T5Gemma-TTS-Demo",
+            # TTS_SPACE lets us point at our own duplicate of the Space (paid
+            # persistent hardware = no per-user ZeroGPU quota); defaults to the
+            # community ZeroGPU demo
+            _tts["client"] = Client(os.environ.get("TTS_SPACE", "Aratako/T5Gemma-TTS-Demo"),
                                     token=os.environ.get("HF_TOKEN"), verbose=False)
         out = _tts["client"].predict(
             reference_speech=None, reference_text=None, target_text=txt,
