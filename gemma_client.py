@@ -216,6 +216,11 @@ def vision_describe(frame_paths: List[str], prompt: str,
                 temperature=0.2, timeout=timeout)
 
 
+TRANSCRIBE_PROMPT = (
+    "Transcribe the speech in this audio exactly, word for word. "
+    "If there is no intelligible speech, reply with exactly NO_SPEECH.")
+
+
 def hear(wav_path: str, prompt: str = "", timeout: int = 60) -> str:
     """Audio description from Gemma 3n E4B, serverless via the HF router (served
     by Together). Note the format quirk: the endpoint rejects OpenAI-style

@@ -91,7 +91,7 @@ def _run(vid_path: str, workdir: str) -> dict:
     # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
-    heard, heard_via = "", ""
+    heard, heard_via, transcript = "", "", ""
     try:
         wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
     except Exception:
@@ -114,6 +114,17 @@ def _run(vid_path: str, workdir: str) -> dict:
                 heard, heard_via = gc.hear(wav), "serverless"
             except Exception:
                 pass
+        # transcript: only surfaces when the clip actually contains speech
+        try:
+            tr = gc.hear(wav, gc.TRANSCRIBE_PROMPT)
+            words = tr.split()
+            # degenerate-repetition guard: music beds sometimes "transcribe" as one
+            # token repeated dozens of times; real speech has lexical variety
+            degenerate = len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.3
+            if tr and "NO_SPEECH" not in tr.upper() and not degenerate:
+                transcript = tr[:600]
+        except Exception:
+            pass
 
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
     return {
@@ -121,6 +132,7 @@ def _run(vid_path: str, workdir: str) -> dict:
         "anchors": anchors,
         "heard": heard,
         "heard_via": heard_via,
+        "transcript": transcript,
         "description": description,
         "title": title,
         "montage": montage_uri,

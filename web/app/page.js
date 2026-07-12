@@ -438,6 +438,12 @@ export default function Page() {
                       <span className="heard-k">soundtrack · Gemma 3n {result.heard_via || ""} · experimental</span> {result.heard}
                     </p>
                   )}
+                  {result.transcript && (
+                    <p className="heard"
+                       title="Speech transcribed by Gemma 3n E4B (audio input). Shown only when the clip contains intelligible speech.">
+                      <span className="heard-k">transcript · Gemma 3n</span> "{result.transcript}"
+                    </p>
+                  )}
                 </div>
                 <div className="langbar">
                   <span className="ev-k">Four voices</span>
