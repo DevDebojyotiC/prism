@@ -233,6 +233,48 @@ async def caption_upload(file: UploadFile = File(...)):
         return _run(vid, wd)
 
 
+class TTSReq(BaseModel):
+    text: str
+
+
+_tts = {"client": None}  # lazy; reused across requests
+
+
+@app.post("/api/tts")
+def tts(req: TTSReq):
+    """Demo-only: synthesize speech with T5Gemma-TTS (a community TTS built on
+    Google's T5Gemma weights) running on a HF ZeroGPU Space. The only live
+    Gemma-family voice we found: none of the 35 Gemma-TTS models on the Hub has
+    a serverless provider. The frontend falls back to the browser voice on any
+    failure or quota exhaustion."""
+    txt = " ".join(req.text.split())
+    if len(txt) > 300:  # keep synthesis time sane; trim at a sentence boundary
+        cut = txt[:300]
+        dot = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        txt = cut[:dot + 1] if dot > 120 else cut.rsplit(" ", 1)[0]
+    t0 = time.time()
+    try:
+        from gradio_client import Client
+        if _tts["client"] is None:
+            _tts["client"] = Client("Aratako/T5Gemma-TTS-Demo",
+                                    token=os.environ.get("HF_TOKEN"), verbose=False)
+        out = _tts["client"].predict(
+            reference_speech=None, reference_text=None, target_text=txt,
+            target_duration="", top_k=30, top_p=0.9, min_p=0.0,
+            temperature=0.8, seed="", num_samples=1,
+            api_name="/gradio_inference")
+        first = out[0] if isinstance(out, (list, tuple)) else out
+        if isinstance(first, dict):
+            first = first.get("value")
+        if first and os.path.exists(first):
+            b64 = base64.b64encode(open(first, "rb").read()).decode("ascii")
+            return {"audio": "data:audio/wav;base64," + b64,
+                    "engine": "T5Gemma-TTS", "seconds": round(time.time() - t0, 1)}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+    return {"error": "no audio produced"}
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True, "backends": gc.active_backends()}

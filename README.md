@@ -129,10 +129,11 @@ the demo's fact-anchor check). The family has obvious next steps:
   transcription. Utterance-level timing worked; word-level sync needs a
   word-timestamp ASR, so the feature is parked until the Gemma family exposes
   one. The transcript itself ships today in the demo's Transcript tab.
-- **A Gemma voice.** The demo's "listen" button uses the browser's speech engine
-  today; the Gemma-family swap-in is T5Gemma-TTS (a community TTS built on Google's
-  T5Gemma weights), following the same open pipeline pattern HF and Cerebras
-  demonstrated with Gemma-4 voice agents.
+- **A Gemma voice (shipped in the demo).** The "listen" button speaks with
+  T5Gemma-TTS, a community TTS built on Google's T5Gemma weights, running on a HF
+  ZeroGPU Space (the only live Gemma-family voice: none of the 35 Gemma-TTS models
+  on the Hub has a serverless provider today; we checked every one). The browser's
+  speech engine covers failures and quota. Next step: self-host it beside Prism.
 - **On-device Prism.** Open weights make the endgame local and private: small Gemma
   checkpoints captioning on the machine that recorded the video.
 

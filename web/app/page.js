@@ -128,16 +128,48 @@ export default function Page() {
     setPhase("input");
   }
 
-  function speak(text) {
+  const gemmaAudio = useRef(null);
+
+  function stopSpeaking() {
+    window.speechSynthesis?.cancel();
+    if (gemmaAudio.current) { gemmaAudio.current.pause(); gemmaAudio.current = null; }
+    setSpeaking(false);
+  }
+
+  function browserSpeak(text) {
     const synth = window.speechSynthesis;
-    if (!synth) return;
-    if (synth.speaking) { synth.cancel(); setSpeaking(false); return; }
+    if (!synth) { setSpeaking(false); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 1.05;
     u.onend = () => setSpeaking(false);
     u.onerror = () => setSpeaking(false);
-    setSpeaking(true);
     synth.speak(u);
+  }
+
+  async function speak(text) {
+    if (speaking) { stopSpeaking(); return; }
+    setSpeaking(true);
+    // Gemma voice first: T5Gemma-TTS on a HF ZeroGPU Space (~20s to synthesize);
+    // browser voice covers failures and quota exhaustion
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 60000);
+      const r = await fetch("/api/tts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }), signal: ctl.signal,
+      });
+      clearTimeout(timer);
+      const d = await r.json();
+      if (d.audio) {
+        const a = new Audio(d.audio);
+        gemmaAudio.current = a;
+        a.onended = () => { gemmaAudio.current = null; setSpeaking(false); };
+        a.onerror = () => { gemmaAudio.current = null; setSpeaking(false); };
+        await a.play();
+        return;
+      }
+    } catch {}
+    browserSpeak(text);
   }
 
   async function changeLang(l) {
@@ -156,7 +188,7 @@ export default function Page() {
   }
 
   async function run(promise, label) {
-    window.speechSynthesis?.cancel(); setSpeaking(false); setMTab("desc");
+    stopSpeaking(); setMTab("desc");
     setError(""); setResult(null); setTranslated(null); setLang("English");
     setSourceLabel(label || ""); setPhase("loading");
     try {
@@ -438,7 +470,7 @@ export default function Page() {
                             onClick={() => speak(mTab === "sound" ? result.heard
                                               : mTab === "transcript" ? result.transcript
                                               : result.description)}
-                            title="Read this panel aloud (your browser's voice; a Gemma voice via T5Gemma-TTS is on the roadmap)">
+                            title="Read this panel aloud. Voice: T5Gemma-TTS (a community TTS built on Google's T5Gemma weights) via a HF ZeroGPU Space, ~20s to synthesize; your browser's voice covers failures.">
                       {speaking ? "stop" : "listen"}
                     </button>
                   </div>
