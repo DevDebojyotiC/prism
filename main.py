@@ -59,9 +59,10 @@ def process_one(task: dict, workdir: str) -> dict:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
 
-    # a few high-res individual frames beat a low-res montage; Kimi takes 8 in
-    # one call (Fireworks payload cap is far above the HF endpoint's ~5)
-    default_n = 8 if gc.kimi_available() else 5
+    # a few high-res individual frames beat a low-res montage; Kimi takes 16 in
+    # one call (Fireworks' payload cap is far above the HF endpoint's ~5 images),
+    # and denser coverage gives the grounding more specific temporal detail
+    default_n = 25 if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""

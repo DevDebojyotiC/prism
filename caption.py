@@ -42,24 +42,45 @@ _GROUND_PROMPT = (
     "4-6 detailed sentences (roughly 150-250 words)."
 )
 
-# the HF Gemma endpoint caps a request at ~5 images; Kimi on Fireworks takes 8+.
+# the HF Gemma endpoint caps a request at ~5 images; Kimi on Fireworks takes 16+.
 _MAX_IMAGES = 5
-_KIMI_IMAGES = 8
+_KIMI_STILLS = 15   # full-res individual frames (detail stream)
+_FLOW_NOTE = (
+    "\nThe FIRST image is a 5x5 montage of 25 frames spanning the WHOLE clip in "
+    "time order (read left-to-right, top-to-bottom): use it to track the overall "
+    "flow: what moves, what changes, the order of events. The remaining images "
+    "are full-resolution stills from the same clip, in time order: use them for "
+    "fine detail (text, faces, small objects). Do not describe the montage as a "
+    "collage; it is one video."
+)
 
 
 def ground(frame_paths: List[str], transcript: str = "",
            montage_out: Optional[str] = None) -> str:
-    """Grounding: Kimi (frontier vision, 8 frames) when configured, else Gemma
-    (5 frames). Styling downstream is always Gemma; Kimi only reports facts."""
-    prompt = _GROUND_PROMPT
-    if transcript:
-        prompt += f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
+    """Grounding. Kimi path (when configured): one high-res 25-frame montage for
+    the temporal flow + 15 full-res stills for detail, in a single call. Gemma
+    path: 5 stills (endpoint image cap). Styling downstream is always Gemma; the
+    grounding model only reports facts."""
+    extra = (f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
+             if transcript else "")
     if gc.kimi_available():
         try:
-            return gc.kimi_describe(frame_paths[:_KIMI_IMAGES], prompt, max_tokens=600)
+            imgs = list(frame_paths)
+            prompt = _GROUND_PROMPT + extra
+            if len(frame_paths) >= 20:  # enough for the flow montage + stills
+                dest = montage_out or os.path.join(
+                    tempfile.gettempdir(), f"prism_flow_{os.getpid()}.jpg")
+                flow = V.make_montage(frame_paths[:25], dest, cell=440,
+                                      max_side=1800, quality=80)
+                n = len(frame_paths)
+                idxs = sorted({round(i * (n - 1) / (_KIMI_STILLS - 1)) for i in range(_KIMI_STILLS)})
+                if flow:
+                    imgs = [flow] + [frame_paths[i] for i in idxs]
+                    prompt = _GROUND_PROMPT + _FLOW_NOTE + extra
+            return gc.kimi_describe(imgs[:16], prompt, max_tokens=600)
         except Exception:
             pass  # fall through to the pure-Gemma path
-    return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=600)
+    return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra, max_tokens=600)
 
 
 _VERIFY_PROMPT = (

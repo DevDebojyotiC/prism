@@ -45,14 +45,20 @@ def extract_frames(path: str, out_dir: str, n_frames: int = 5,
     if dur > 1.0:
         pad = 0.05 * dur                       # skip black intro/outro
         span = dur - 2 * pad
-        for i in range(n_frames):
+
+        def _grab(i):                          # fast input-seek, one frame each
             frac = i / (n_frames - 1) if n_frames > 1 else 0.5
             t = pad + span * frac
-            subprocess.run(                    # fast input-seek, one frame each
+            subprocess.run(
                 ["ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", path, "-frames:v", "1",
                  "-vf", vf, "-q:v", "3", os.path.join(out_dir, f"f_{i:03d}.jpg")],
                 capture_output=True, timeout=30,
             )
+
+        # seeks are independent; parallelize (I/O + one-GOP decode each)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, n_frames)) as ex:
+            list(ex.map(_grab, range(n_frames)))
     else:
         subprocess.run(
             ["ffmpeg", "-y", "-i", path, "-vf", f"fps=1,{vf}", "-frames:v",

@@ -63,7 +63,7 @@ def _b64_jpeg(path: str) -> str:
 def _run(vid_path: str, workdir: str) -> dict:
     t0 = time.time()
     frames_dir = os.path.join(workdir, "frames")
-    default_n = 8 if gc.kimi_available() else 5
+    default_n = 25 if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid_path, frames_dir, n_frames=n_frames)
     # the pipeline no longer needs a montage (individual high-res frames go to the
