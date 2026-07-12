@@ -139,12 +139,15 @@ the demo's fact-anchor check). The family has obvious next steps:
 
 ## Notes
 - **Graded submission images:** `v10-scored` tag = the 0.87 run (quick 8-frame
-  grounding). `v14` = the final submission: flow-montage grounding
-  (`PRISM_FLOW=1`), speech-aware grounding (`PRISM_STT=1`), and a per-clip
-  time-budget system: the download is wall-capped, every model call carries an
-  absolute deadline, grounding degrades to fewer/smaller frames when the clock
-  runs short, and a hard axe guarantees the 30s/clip cap on any input (validated
-  on 6.5-minute and 4K clips). Both flags revert at runtime.
+  grounding). `v18` = the final submission: up to 16 individual stills to the
+  grounding race when the download was fast, a three-way parallel grounding
+  race (Kimi, then Qwen3-VL-235B, then Gemma, ranked by a measured benchmark
+  on the public validation clips), speech-aware grounding on a budget gate,
+  and a per-clip time-budget system: the download is wall-capped, every model
+  call carries an absolute deadline, grounding degrades to fewer/smaller
+  frames as the clock shrinks, and a hard axe guarantees the 30s/clip cap on
+  any input. Validated at 1 vCPU / 2 GB (half the grading environment) on
+  20-clip gauntlets including 2m43s speech films and 24 Mbps stress encodes.
 - Track 2 injects no credentials, so model tokens are baked into the public image at build
   time. If you fork this, use disposable tokens and rotate them afterwards.
 - Built for `linux/amd64`; CPU-only; ~10–20s per clip, well within the 30 s/clip and 10 min budgets.
