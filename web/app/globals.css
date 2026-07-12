@@ -602,3 +602,11 @@ footer p{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-
   pointer-events:none;backdrop-filter:blur(3px);
 }
 .livecap-note{margin-top:6px}
+
+/* mini tabs inside the intelligence card + panel footnote */
+.tabs.mini{padding:3px;border-radius:10px}
+.tabs.mini button{padding:5px 12px;font-size:11px}
+.tab-meta{
+  margin:10px 0 0;font-family:var(--mono);font-size:10px;
+  color:var(--ink-faint);letter-spacing:.02em;
+}

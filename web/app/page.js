@@ -42,6 +42,7 @@ export default function Page() {
   const [translating, setTranslating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [liveCap, setLiveCap] = useState("");
+  const [mTab, setMTab] = useState("desc");   // description | sound | transcript
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
   const outRef = useRef(null);
@@ -173,7 +174,7 @@ export default function Page() {
   }
 
   async function run(promise, label) {
-    window.speechSynthesis?.cancel(); setSpeaking(false);
+    window.speechSynthesis?.cancel(); setSpeaking(false); setMTab("desc");
     setError(""); setResult(null); setTranslated(null); setLang("English");
     setSourceLabel(label || ""); setPhase("loading");
     try {
@@ -453,25 +454,40 @@ export default function Page() {
                     </div>
                   )}
                   <div className="gk-row">
-                    <div className="ev-k gk">Grounded description · the facts all four captions are built from</div>
+                    <div className="tabs mini" role="tablist" aria-label="What the model understood">
+                      <button role="tab" aria-selected={mTab === "desc"} onClick={() => setMTab("desc")}>Description</button>
+                      {result.heard && (
+                        <button role="tab" aria-selected={mTab === "sound"} onClick={() => setMTab("sound")}>Soundtrack</button>
+                      )}
+                      {result.transcript && (
+                        <button role="tab" aria-selected={mTab === "transcript"} onClick={() => setMTab("transcript")}>Transcript</button>
+                      )}
+                    </div>
                     <button className={"listen" + (speaking ? " on" : "")}
-                            onClick={() => speak(result.description)}
-                            title="Read the description aloud (your browser's voice; a Gemma voice via T5Gemma-TTS is on the roadmap)">
+                            onClick={() => speak(mTab === "sound" ? result.heard
+                                              : mTab === "transcript" ? result.transcript
+                                              : result.description)}
+                            title="Read this panel aloud (your browser's voice; a Gemma voice via T5Gemma-TTS is on the roadmap)">
                       {speaking ? "stop" : "listen"}
                     </button>
                   </div>
-                  <p className="desc">{result.description}</p>
-                  {result.heard && (
-                    <p className="heard"
-                       title="Experimental: the clip's soundtrack as heard by Gemma 3n E4B (audio input). The small checkpoint hears ambient audio unreliably; a hint, not graded fact.">
-                      <span className="heard-k">soundtrack · Gemma 3n {result.heard_via || ""} · experimental</span> {result.heard}
-                    </p>
+                  {mTab === "desc" && (
+                    <>
+                      <p className="desc">{result.description}</p>
+                      <p className="tab-meta">grounded description · the facts all four captions are built from</p>
+                    </>
                   )}
-                  {result.transcript && (
-                    <p className="heard"
-                       title="Speech transcribed by Gemma 3n E4B (audio input). Shown only when the clip contains intelligible speech.">
-                      <span className="heard-k">transcript · Gemma 3n</span> "{result.transcript}"
-                    </p>
+                  {mTab === "sound" && result.heard && (
+                    <>
+                      <p className="desc">{result.heard}</p>
+                      <p className="tab-meta">what Gemma 3n hears in the soundtrack · {result.heard_via || "serverless"} · experimental, never graded fact</p>
+                    </>
+                  )}
+                  {mTab === "transcript" && result.transcript && (
+                    <>
+                      <p className="desc">"{result.transcript}"</p>
+                      <p className="tab-meta">speech transcribed by Gemma 3n · appears only when the clip contains speech · drives the live captions on the source video</p>
+                    </>
                   )}
                 </div>
                 <div className="langbar">
