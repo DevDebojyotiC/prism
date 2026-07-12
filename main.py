@@ -32,6 +32,14 @@ USE_VERIFY = os.environ.get("PRISM_VERIFY", "1").strip().lower() in {"1", "true"
 # PRISM_STT=1: transcribe the clip's speech (Gemma 3n, Gemini on error) on a side
 # thread and feed it to the grounding stage; hard-capped so it can't cost >10s
 USE_STT = os.environ.get("PRISM_STT", "0").strip().lower() in {"1", "true", "yes"}
+# Per-clip wall-clock budget. The harness allows 30s/request; we target 25 and
+# derive every stage timeout from the time actually left, so a slow download or
+# a congested model host degrades the clip instead of blowing the cap.
+CLIP_BUDGET = float(os.environ.get("PRISM_CLIP_BUDGET", "25"))
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
 
 
 # When the pipeline fails outright (no description to ground from), emit four
@@ -57,17 +65,24 @@ def process_one(task: dict, workdir: str) -> dict:
     vid = os.path.join(workdir, f"{tid}.mp4")
     frames_dir = os.path.join(workdir, f"{tid}_frames")
     t_dl = time.time()
+    left = lambda: CLIP_BUDGET - (time.time() - t_dl)  # noqa: E731
     try:
-        video.download_video(url, vid)
+        # never let the download eat more than ~half the budget; a truncated
+        # faststart mp4 still yields usable frames from its downloaded prefix
+        video.download_video(url, vid, max_seconds=CLIP_BUDGET * 0.48)
     except Exception as e:
         print(f"[prism] {tid} download failed: {e}", file=sys.stderr)
         return _fallback_captions(styles, "A short video clip.")
     dl_secs = time.time() - t_dl
+    print(f"[prism] {tid} downloaded {os.path.getsize(vid)>>20}MB in {dl_secs:.1f}s",
+          file=sys.stderr)
 
     # speech transcript on a side thread, overlapped with frame extraction; the
-    # grounding waits at most a few seconds for it and proceeds without it
+    # grounding waits at most a few seconds for it and proceeds without it.
+    # Skipped when the download was slow: its ffmpeg audio decode would fight
+    # frame extraction for the 2 vCPUs exactly when time is scarcest.
     stt_future = None
-    if USE_STT:
+    if USE_STT and dl_secs <= 6:
         from concurrent.futures import ThreadPoolExecutor
         import audio_intel
         _stt_pool = ThreadPoolExecutor(max_workers=1)
@@ -81,11 +96,11 @@ def process_one(task: dict, workdir: str) -> dict:
     # detail, but too slow for the graded 30s/clip budget on 4K, so OFF by
     # default; the graded image behavior stays exactly v10's
     use_flow = os.environ.get("PRISM_FLOW", "0").strip().lower() in {"1", "true", "yes"}
-    if use_flow and dl_secs > 10:
-        # slow (usually 4K) download already ate the budget: degrade to the quick
-        # 8-frame grounding so the clip stays inside the 30s cap
+    if use_flow and dl_secs > 6:
+        # slow (usually 4K/long) download already ate the budget: degrade to the
+        # quick few-frame grounding so the clip stays inside the 30s cap
         use_flow = False
-    default_n = (25 if use_flow else 8) if gc.kimi_available() else 5
+    default_n = (25 if use_flow else (6 if dl_secs > 10 else 8)) if gc.kimi_available() else 5
     n_frames = int(N_FRAMES_ENV) if N_FRAMES_ENV else default_n
     frames = video.extract_frames(vid, frames_dir, n_frames=n_frames)
     transcript = ""
@@ -95,26 +110,36 @@ def process_one(task: dict, workdir: str) -> dict:
         if audio:
             transcript = tr.transcribe(audio)
 
+    print(f"[prism] {tid} timing: dl={dl_secs:.1f}s extract={time.time()-t_dl-dl_secs:.1f}s "
+          f"frames={len(frames)} left={left():.1f}s", file=sys.stderr)
     if not frames:
         return _fallback_captions(styles, "A short video clip.")
 
-    if len(frames) >= 20 and time.time() - t_dl > 13:
-        # second timing guard: download+extraction already used too much of the
-        # 30s budget; fall back to quick grounding by thinning to ~8 stills
-        frames = frames[::3]
     if stt_future is not None:
         try:
-            stt_text = stt_future.result(timeout=10)  # hard cap; never stalls a clip
+            # the transcript may only use time grounding doesn't need: the flow
+            # grounding call wants ~16s, so the wait is whatever exceeds that
+            stt_text = stt_future.result(timeout=_clamp(left() - 17, 0.1, 8))
             if stt_text:
                 transcript = (transcript + " " + stt_text).strip() if transcript else stt_text
         except Exception:
             pass
-    description = caption.ground(frames, transcript)
+    if len(frames) >= 20 and left() < 15:
+        # the 16-image flow grounding no longer fits the remaining budget;
+        # thin to ~8 stills for the quick single-call grounding
+        frames = frames[::3]
+    # absolute deadlines: grounding leaves ~3s for styling (cerebras answers in
+    # 1-2s); styling may run slightly past the soft budget (hard axe at +3)
+    clip_deadline = t_dl + CLIP_BUDGET
+    description = caption.ground(frames, transcript, deadline=clip_deadline - 3)
     # verify is a Gemma pass; when Kimi (a stronger VLM) grounded, don't let the
     # weaker model second-guess it
-    if USE_VERIFY and gc.LAST_BACKEND != "kimi":
-        description = caption.verify(frames, description)
-    return caption.stylize(description, styles)
+    if USE_VERIFY and gc.LAST_BACKEND != "kimi" and left() > 12:
+        try:
+            description = caption.verify(frames, description)
+        except Exception:
+            pass  # the unverified description is still good
+    return caption.stylize(description, styles, deadline=clip_deadline + 2)
 
 
 def main() -> int:
@@ -132,7 +157,14 @@ def main() -> int:
             styles = task.get("styles") or STYLE_ORDER
             t0 = time.time()
             try:
-                caps = process_one(task, workdir)
+                # hard wall: even if a library ignores its timeout, the clip is
+                # cut off shortly after the budget and answered with fallbacks
+                # (the worker thread is abandoned, never joined)
+                from concurrent.futures import ThreadPoolExecutor
+                _pool = ThreadPoolExecutor(max_workers=1)
+                _fut = _pool.submit(process_one, task, workdir)
+                _pool.shutdown(wait=False)
+                caps = _fut.result(timeout=CLIP_BUDGET + 3)
             except Exception as e:
                 print(f"[prism] {tid} ERROR: {e}", file=sys.stderr)
                 caps = _fallback_captions(styles, "A short video clip.")

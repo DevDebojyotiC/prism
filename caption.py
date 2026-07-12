@@ -56,7 +56,8 @@ _FLOW_NOTE = (
 
 
 def ground(frame_paths: List[str], transcript: str = "",
-           montage_out: Optional[str] = None) -> str:
+           montage_out: Optional[str] = None,
+           deadline: Optional[float] = None) -> str:
     """Grounding. Kimi path (when configured): one high-res 25-frame montage for
     the temporal flow + 15 full-res stills for detail, in a single call. Gemma
     path: 5 stills (endpoint image cap). Styling downstream is always Gemma; the
@@ -64,10 +65,13 @@ def ground(frame_paths: List[str], transcript: str = "",
     extra = (f"\n\nFor extra context, the audio transcript is:\n\"\"\"\n{transcript[:1500]}\n\"\"\""
              if transcript else "")
     if gc.kimi_available():
-        try:
-            imgs = list(frame_paths)
-            prompt = _GROUND_PROMPT + extra
-            if len(frame_paths) >= 20:  # enough for the flow montage + stills
+        import time as _t
+        rem = (deadline - _t.time()) if deadline else 60.0
+        # stage 1: rich flow grounding (montage + 15 stills), only when it
+        # comfortably fits, and time-boxed so a slow upload still leaves ~7s
+        # for the quick retry below instead of eating the whole clip budget
+        if len(frame_paths) >= 20 and rem >= 16:
+            try:
                 dest = montage_out or os.path.join(
                     tempfile.gettempdir(), f"prism_flow_{os.getpid()}.jpg")
                 flow = V.make_montage(frame_paths[:25], dest, cell=440,
@@ -76,11 +80,42 @@ def ground(frame_paths: List[str], transcript: str = "",
                 idxs = sorted({round(i * (n - 1) / (_KIMI_STILLS - 1)) for i in range(_KIMI_STILLS)})
                 if flow:
                     imgs = [flow] + [frame_paths[i] for i in idxs]
-                    prompt = _GROUND_PROMPT + _FLOW_NOTE + extra
-            return gc.kimi_describe(imgs[:16], prompt, max_tokens=600)
+                    return gc.kimi_describe(
+                        imgs[:16], _GROUND_PROMPT + _FLOW_NOTE + extra,
+                        max_tokens=600, deadline=_t.time() + rem - 7)
+            except Exception:
+                pass  # fall through to the quick grounding
+        # stage 2: quick grounding, at most 8 stills (small payload, fast)
+        try:
+            rem2 = (deadline - _t.time()) if deadline else 60.0
+            n = len(frame_paths)
+            k = 8 if rem2 >= 14 else (6 if rem2 >= 9 else 4)
+            if n > k:
+                idxs = sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
+                picks = [frame_paths[i] for i in idxs]
+            else:
+                picks = list(frame_paths)
+            if rem2 < 14:
+                # tight window: re-encode small (640px q70) so the payload
+                # uploads in ~1s even on a congested link
+                from PIL import Image
+                small = []
+                for p in picks:
+                    try:
+                        im = Image.open(p).convert("RGB")
+                        im.thumbnail((640, 640))
+                        sp = p + ".sm.jpg"
+                        im.save(sp, "JPEG", quality=70)
+                        small.append(sp)
+                    except Exception:
+                        small.append(p)
+                picks = small
+            return gc.kimi_describe(picks, _GROUND_PROMPT + extra,
+                                    max_tokens=600, deadline=deadline)
         except Exception:
             pass  # fall through to the pure-Gemma path
-    return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra, max_tokens=600)
+    return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra,
+                              max_tokens=600, deadline=deadline)
 
 
 _VERIFY_PROMPT = (
@@ -104,7 +139,8 @@ def verify(frame_paths: List[str], description: str,
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=560)
 
 
-def stylize(description: str, styles: List[str]) -> dict:
+def stylize(description: str, styles: List[str],
+            deadline: Optional[float] = None) -> dict:
     ordered = [s for s in S.STYLE_ORDER if s in styles] or styles
     guide = S.guide_for(ordered)
     keys = ", ".join(f'"{s}"' for s in ordered)
@@ -126,6 +162,7 @@ def stylize(description: str, styles: List[str]) -> dict:
         [{"role": "user", "content": user}],
         max_tokens=800, temperature=0.7,
         response_format={"type": "json_object"},
+        deadline=deadline,
     )
     # Fallback is a SHORT grounded sentence, never the whole description; keeps
     # every card compact even when a style is missing.

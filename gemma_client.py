@@ -97,7 +97,7 @@ def _backends() -> List[Backend]:
 
 
 def _post_chat(b: Backend, messages: list, max_tokens: int, temperature: float,
-               response_format: Optional[dict]) -> str:
+               response_format: Optional[dict], timeout: Optional[float] = None) -> str:
     payload = {"model": b.model, "messages": messages,
                "max_tokens": max_tokens, "temperature": temperature}
     if b.disable_thinking:
@@ -109,7 +109,7 @@ def _post_chat(b: Backend, messages: list, max_tokens: int, temperature: float,
         headers.update(b.extra_headers)
     r = requests.post(
         f"{b.base_url}/chat/completions",
-        headers=headers, json=payload, timeout=b.timeout,
+        headers=headers, json=payload, timeout=timeout or b.timeout,
     )
     r.raise_for_status()
     msg = r.json()["choices"][0]["message"]
@@ -133,7 +133,13 @@ def _is_transient(e: Exception) -> bool:
 
 
 def chat(messages: list, max_tokens: int = 512, temperature: float = 0.4,
-         response_format: Optional[dict] = None, timeout: int = 90) -> str:
+         response_format: Optional[dict] = None,
+         timeout: Optional[float] = None,
+         deadline: Optional[float] = None) -> str:
+    """deadline (absolute time.time() value) bounds the WHOLE failover chain:
+    each attempt's socket timeout shrinks to the time left, and no new attempt
+    starts with under ~2s remaining. Without it a 4-backend chain can spend
+    several times any single-call timeout."""
     backends = _backends()
     if not backends:
         raise RuntimeError("no Gemma backend configured (set HF_TOKEN, or FIREWORKS_API_KEY+PRISM_FW_MODEL, or AMD_GEMMA_BASE_URL)")
@@ -142,8 +148,15 @@ def chat(messages: list, max_tokens: int = 512, temperature: float = 0.4,
     for b in backends:
         # Retry transient errors on THIS backend before failing over to the next.
         for attempt in range(len(_BACKOFF) + 1):
+            eff_timeout = timeout
+            if deadline is not None:
+                remaining = deadline - time.time()
+                if remaining < 2:
+                    raise last or RuntimeError("chat deadline exhausted")
+                eff_timeout = min(timeout or remaining, remaining)
             try:
-                out = _post_chat(b, messages, max_tokens, temperature, response_format)
+                out = _post_chat(b, messages, max_tokens, temperature,
+                                 response_format, timeout=eff_timeout)
                 if out:
                     LAST_BACKEND = b.name
                     return out
@@ -177,7 +190,8 @@ def kimi_available() -> bool:
 
 
 def kimi_describe(frame_paths: List[str], prompt: str,
-                  max_tokens: int = 600, timeout: int = 60) -> str:
+                  max_tokens: int = 600, timeout: int = 60,
+                  deadline: Optional[float] = None) -> str:
     """One Kimi vision call over individual frames. Raises on total failure so the
     caller can fall back to the pure-Gemma path."""
     key = os.environ.get("FIREWORKS_API_KEY", "")
@@ -191,6 +205,12 @@ def kimi_describe(frame_paths: List[str], prompt: str,
     last = None
     for model in KIMI_MODELS:
         for attempt in range(len(_BACKOFF) + 1):
+            eff_timeout = float(timeout)
+            if deadline is not None:
+                remaining = deadline - time.time()
+                if remaining < 2:
+                    raise last or RuntimeError("kimi deadline exhausted")
+                eff_timeout = min(eff_timeout, remaining)
             try:
                 r = requests.post(
                     "https://api.fireworks.ai/inference/v1/chat/completions",
@@ -199,7 +219,7 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                     json={"model": model, "max_tokens": max_tokens,
                           "temperature": 0.3, "reasoning_effort": "none",
                           "messages": [{"role": "user", "content": content}]},
-                    timeout=timeout,
+                    timeout=eff_timeout,
                 )
                 r.raise_for_status()
                 msg = r.json()["choices"][0]["message"]
@@ -222,7 +242,8 @@ def kimi_describe(frame_paths: List[str], prompt: str,
 
 
 def vision_describe(frame_paths: List[str], prompt: str,
-                    max_tokens: int = 400, timeout: int = 120) -> str:
+                    max_tokens: int = 400, timeout: int = 120,
+                    deadline: Optional[float] = None) -> str:
     content = [{"type": "text", "text": prompt}]
     for p in frame_paths:
         content.append({
@@ -230,7 +251,7 @@ def vision_describe(frame_paths: List[str], prompt: str,
             "image_url": {"url": f"data:image/jpeg;base64,{_b64_image(p)}"},
         })
     return chat([{"role": "user", "content": content}], max_tokens=max_tokens,
-                temperature=0.2, timeout=timeout)
+                temperature=0.2, timeout=timeout, deadline=deadline)
 
 
 TS_TRANSCRIBE_PROMPT = (

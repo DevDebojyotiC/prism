@@ -51,3 +51,4 @@ test/proxy_judge.py
 test/stress_test.py
 web/prism-redesign_5.html
 web/PRISM_UI_BRIEF.md
+testio/

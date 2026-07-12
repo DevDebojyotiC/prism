@@ -11,13 +11,22 @@ import subprocess
 from typing import List, Optional
 
 
-def download_video(url: str, dest: str, timeout: int = 120) -> str:
+def download_video(url: str, dest: str, timeout: int = 120,
+                   max_seconds: Optional[float] = None) -> str:
+    """Stream the clip to disk. max_seconds is a WALL-CLOCK cap: when it expires
+    we stop and keep the partial file (web-served mp4s are faststart, so the
+    downloaded prefix is decodable and frames from it still describe the clip);
+    a long/slow download must never eat the whole per-clip budget."""
+    import time as _t
     import requests
+    t0 = _t.time()
     with requests.get(url, stream=True, timeout=timeout) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_content(chunk_size=1 << 20):
                 f.write(chunk)
+                if max_seconds is not None and _t.time() - t0 > max_seconds:
+                    break
     return dest
 
 
