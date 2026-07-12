@@ -249,29 +249,36 @@ def tts(req: TTSReq):
     failure or quota exhaustion."""
     txt = " ".join(req.text.split())[:400]  # client sends sentence-chunks; hard safety cap only
     t0 = time.time()
-    try:
-        from gradio_client import Client
-        if _tts["client"] is None:
-            # TTS_SPACE lets us point at our own duplicate of the Space (paid
-            # persistent hardware = no per-user ZeroGPU quota); defaults to the
-            # community ZeroGPU demo
-            _tts["client"] = Client(os.environ.get("TTS_SPACE", "Aratako/T5Gemma-TTS-Demo"),
-                                    token=os.environ.get("HF_TOKEN"), verbose=False)
-        out = _tts["client"].predict(
-            reference_speech=None, reference_text=None, target_text=txt,
-            target_duration="", top_k=30, top_p=0.9, min_p=0.0,
-            temperature=0.8, seed="", num_samples=1,
-            api_name="/gradio_inference")
-        first = out[0] if isinstance(out, (list, tuple)) else out
-        if isinstance(first, dict):
-            first = first.get("value")
-        if first and os.path.exists(first):
-            b64 = base64.b64encode(open(first, "rb").read()).decode("ascii")
-            return {"audio": "data:audio/wav;base64," + b64,
-                    "engine": "T5Gemma-TTS", "seconds": round(time.time() - t0, 1)}
-    except Exception as e:
-        return {"error": str(e)[:200]}
-    return {"error": "no audio produced"}
+    # host order: the AMD notebook (TTS_SPACE tunnel URL, no quota, Gemma voice
+    # on AMD silicon) -> the public ZeroGPU Space (quota-capped). Same app, same
+    # API; only the hardware differs. The frontend's browser voice covers total
+    # failure.
+    hosts = []
+    if os.environ.get("TTS_SPACE"):
+        hosts.append((os.environ["TTS_SPACE"], "T5Gemma-TTS on AMD W7900"))
+    hosts.append(("Aratako/T5Gemma-TTS-Demo", "T5Gemma-TTS"))
+    last_err = "no audio produced"
+    from gradio_client import Client
+    for name, label in hosts:
+        try:
+            if _tts.get(name) is None:
+                _tts[name] = Client(name, token=os.environ.get("HF_TOKEN"), verbose=False)
+            out = _tts[name].predict(
+                reference_speech=None, reference_text=None, target_text=txt,
+                target_duration="", top_k=30, top_p=0.9, min_p=0.0,
+                temperature=0.8, seed="", num_samples=1,
+                api_name="/gradio_inference")
+            first = out[0] if isinstance(out, (list, tuple)) else out
+            if isinstance(first, dict):
+                first = first.get("value")
+            if first and os.path.exists(first):
+                b64 = base64.b64encode(open(first, "rb").read()).decode("ascii")
+                return {"audio": "data:audio/wav;base64," + b64,
+                        "engine": label, "seconds": round(time.time() - t0, 1)}
+        except Exception as e:
+            _tts[name] = None      # stale client (dead tunnel): rebuild next time
+            last_err = str(e)[:200]
+    return {"error": last_err}
 
 
 @app.get("/api/health")
