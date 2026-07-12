@@ -42,6 +42,7 @@ export default function Page() {
   const [translating, setTranslating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
+  const [buffering, setBuffering] = useState(false);
   const [mTab, setMTab] = useState("desc");   // description | sound | transcript
   const fileRef = useRef(null);
   const sceneRef = useRef(null);
@@ -136,7 +137,7 @@ export default function Page() {
     if (voiceRun.current) voiceRun.current.aborted = true;
     window.speechSynthesis?.cancel();
     if (gemmaAudio.current) { gemmaAudio.current.pause(); gemmaAudio.current = null; }
-    setSpeaking(false); setVoiceLoading(false);
+    setSpeaking(false); setVoiceLoading(false); setBuffering(false);
   }
 
   function browserSpeak(text) {
@@ -166,15 +167,15 @@ export default function Page() {
   async function fetchTTS(text) {
     try {
       const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 90000);
+      const timer = setTimeout(() => ctl.abort(), 120000);
       const r = await fetch("/api/tts", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }), signal: ctl.signal,
       });
       clearTimeout(timer);
       const d = await r.json();
-      return d.audio || null;
-    } catch { return null; }
+      return d.audio ? { audio: d.audio } : { error: d.error || "no audio" };
+    } catch { return { error: "network" }; }
   }
 
   function playUri(uri) {
@@ -187,30 +188,36 @@ export default function Page() {
     });
   }
 
-  // Gemma voice, pipelined: synthesize chunk 1, play it while chunk 2 renders in
-  // the background, and so on. Browser voice takes over the REMAINING text if
-  // any chunk fails (quota, Space asleep, network).
+  // Gemma voice, fully parallel: fire synthesis for EVERY sentence chunk at
+  // once, play them in order as they arrive. If a later chunk isn't ready when
+  // its turn comes, we WAIT (button shows "next line"), never fall back early;
+  // the browser voice takes over the remaining text only on a real error.
   async function speak(text) {
     if (speaking || voiceLoading) { stopSpeaking(); return; }
     const run = { aborted: false };
     voiceRun.current = run;
     const chunks = ttsChunks(text);
     setVoiceLoading(true);
-    let audio = await fetchTTS(chunks[0]);
+    const jobs = chunks.map((c) => fetchTTS(c));   // all in flight immediately
+    const first = await jobs[0];
     if (run.aborted) return;
+    if (!first.audio) { setVoiceLoading(false); browserSpeak(text); return; }
     setVoiceLoading(false);
-    if (!audio) { browserSpeak(text); return; }
     setSpeaking(true);
-    for (let i = 0; audio && !run.aborted; i++) {
-      const nextP = i + 1 < chunks.length ? fetchTTS(chunks[i + 1]) : null;
-      await playUri(audio);
+    let res = first;
+    for (let i = 0; !run.aborted; i++) {
+      await playUri(res.audio);
+      if (run.aborted || i + 1 >= chunks.length) break;
+      setBuffering(true);                          // waiting on the next line ≠ failure
+      res = await jobs[i + 1];
+      setBuffering(false);
       if (run.aborted) return;
-      audio = nextP ? await nextP : null;
-      if (nextP && !audio && !run.aborted) {   // mid-stream failure: finish via browser
+      if (!res.audio) {                            // real error: browser finishes the rest
         browserSpeak(chunks.slice(i + 1).join(" "));
         return;
       }
     }
+    setBuffering(false);
     if (!run.aborted) setSpeaking(false);
   }
 
@@ -509,10 +516,10 @@ export default function Page() {
                       )}
                     </div>
                     {mTab === "desc" && (
-                      <button className={"listen" + (speaking ? " on" : "") + (voiceLoading ? " load" : "")}
+                      <button className={"listen" + (speaking ? " on" : "") + (voiceLoading || buffering ? " load" : "")}
                               onClick={() => speak(result.description)}
                               title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights) on a HF ZeroGPU Space. First audio takes ~20s; your browser's voice covers failures.">
-                        {voiceLoading ? "synthesizing" : speaking ? "stop" : "listen"}
+                        {voiceLoading ? "synthesizing" : buffering ? "next line" : speaking ? "stop" : "listen"}
                       </button>
                     )}
                   </div>
