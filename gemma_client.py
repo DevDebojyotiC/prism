@@ -216,6 +216,32 @@ def vision_describe(frame_paths: List[str], prompt: str,
                 temperature=0.2, timeout=timeout)
 
 
+def hear(wav_path: str, prompt: str = "", timeout: int = 60) -> str:
+    """Audio description from Gemma 3n E4B, serverless via the HF router (served
+    by Together). Note the format quirk: the endpoint rejects OpenAI-style
+    input_audio but accepts an audio_url data URI. Experimental: the small
+    checkpoint hears ambient/music soundtracks unreliably; treat output as a
+    hint, never as graded fact."""
+    import base64 as _b
+    b64 = _b.b64encode(open(wav_path, "rb").read()).decode("ascii")
+    r = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers={"Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}"},
+        json={"model": "google/gemma-3n-E4B-it", "max_tokens": 90,
+              "messages": [{"role": "user", "content": [
+                  {"type": "text", "text": prompt or (
+                      "This is the soundtrack of a short video clip. In one or two "
+                      "sentences, describe what you HEAR: speech (summarize it), "
+                      "music, ambient noise, crowd or mechanical sounds. Only report "
+                      "what is clearly audible; if it is just a music bed or "
+                      "indistinct noise, say so plainly.")},
+                  {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{b64}"}}]}]},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return (r.json()["choices"][0]["message"]["content"] or "").strip()
+
+
 def embed(texts, timeout: int = 30):
     """Sentence embeddings via EmbeddingGemma (google/embeddinggemma-300m) on the
     HF router. Used by the demo's fact-anchor check: is each styled caption still

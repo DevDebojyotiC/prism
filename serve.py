@@ -91,27 +91,36 @@ def _run(vid_path: str, workdir: str) -> dict:
     # "Gemma hears": optional audio description from a self-hosted Gemma 3n on the
     # AMD notebook (the hosted APIs don't serve Gemma's audio checkpoints). The
     # demo simply omits the row when the endpoint is not configured or down.
-    heard = ""
-    amd_audio = os.environ.get("AMD_AUDIO_BASE_URL", "").rstrip("/")
-    if amd_audio:
-        try:
-            import base64 as _b64
-            import requests as _rq
-            wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
-            if wav:
+    heard, heard_via = "", ""
+    try:
+        wav = video.extract_audio(vid_path, os.path.join(workdir, "a.wav"))
+    except Exception:
+        wav = ""
+    if wav:
+        amd_audio = os.environ.get("AMD_AUDIO_BASE_URL", "").rstrip("/")
+        if amd_audio:  # self-hosted on the AMD notebook, when the tunnel is up
+            try:
+                import base64 as _b64
+                import requests as _rq
                 b64 = _b64.b64encode(open(wav, "rb").read()).decode("ascii")
                 rr = _rq.post(f"{amd_audio}/describe", json={"audio_b64": b64},
                               headers={"ngrok-skip-browser-warning": "true"}, timeout=45)
                 if rr.ok and rr.json().get("text"):
-                    heard = rr.json()["text"]
-        except Exception:
-            heard = ""
+                    heard, heard_via = rr.json()["text"], "on AMD W7900"
+            except Exception:
+                pass
+        if not heard:  # serverless: HF router -> Together serves the same 3n E4B
+            try:
+                heard, heard_via = gc.hear(wav), "serverless"
+            except Exception:
+                pass
 
     montage_uri = _b64_jpeg(montage_path) if os.path.exists(montage_path) else ""
     return {
         "captions": captions,
         "anchors": anchors,
         "heard": heard,
+        "heard_via": heard_via,
         "description": description,
         "title": title,
         "montage": montage_uri,

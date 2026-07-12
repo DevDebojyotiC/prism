@@ -113,9 +113,12 @@ the demo's fact-anchor check). The family has obvious next steps:
 - **Audio-input Gemma.** Prism currently discards the soundtrack. Gemma's audio-capable
   models could ground on commentary, crowd noise, or UI clicks in screen recordings,
   the extension most likely to lift accuracy further. We probed this during the
-  hackathon: the audio-capable checkpoints (4-12B, 4-E4B) have no serverless
-  provider today, and the one hosted 3n endpoint rejects audio input over the API,
-  so this is a self-hosted extension rather than an API call away.
+  hackathon: the Gemma-4 audio checkpoints (12B, E4B) have no serverless provider
+  today, but Gemma 3n E4B does accept audio through one hosted endpoint (with a
+  format quirk: audio_url, not input_audio), and the demo's experimental
+  "soundtrack" row uses exactly that. The small checkpoint hears ambient audio
+  unreliably, which is why the graded pipeline does not use it yet; the larger
+  audio checkpoints are the real target.
 - **ShieldGemma 2.** For brands publishing four-voice captions at scale, a safety pass
   over the humorous outputs before they ship.
 - **Indic-language depth.** Navarasa (Telugu-LLM-Labs' Gemma fine-tune for Indic
