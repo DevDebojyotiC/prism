@@ -358,7 +358,13 @@ body[data-state="results"] .hero,body[data-state="results"] .io{display:none}
 .d-tabs button.on{background:var(--bg-2);color:var(--ink);box-shadow:var(--seg-shadow)}
 .d-tabs button .by{color:var(--ink-faint);font-weight:400}
 .d-text{font-size:13.5px;color:var(--ink-dim);line-height:1.65}
-.d-text::first-letter{color:var(--ink)}
+/* spectrum drop cap on the grounded description (carried over from v1) */
+.d-text::first-letter{
+  float:left;font-family:var(--display);font-weight:700;
+  font-size:2.9em;line-height:.78;padding:4px 11px 2px 0;
+  background:var(--spectrum);-webkit-background-clip:text;background-clip:text;
+  color:transparent;
+}
 .d-foot{margin-top:11px;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
 .d-foot b{color:var(--ink-dim);font-weight:600}
 
