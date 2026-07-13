@@ -740,7 +740,7 @@ export default function Page() {
             <div className="stat"><div className="k"><span className="ms amd-ic" aria-hidden="true">bolt</span>~700 tok/s at scale</div><div className="v">Qwen2.5-7B on the card: ~29 tok/s single, ~700 tok/s across 32 concurrent streams. Radeon earns its place under batch load.</div></div>
           </div>
           <div className="receipts">
-            <span className="txt">Credited where it does real work and nowhere it does not: the graded captioning path uses serverless providers; the Gemma <em>voice</em> is genuinely <b className="amd-word">AMD</b>-hosted.</span>
+            <span className="txt">Credited where it does real work and nowhere it does not: the graded path uses serverless providers because the scoring GPU is time-gated, while the Gemma <em>voice</em> is genuinely <b className="amd-word">AMD</b>-hosted. On a persistent Radeon GPU the whole pipeline could run on one box, the findings lay out that all-<b className="amd-word">AMD</b> architecture.</span>
             <a className="findings amd" href="https://github.com/DevDebojyotiC/prism/blob/main/AMD_FINDINGS.md" target="_blank" rel="noreferrer">
               <span className="ms" aria-hidden="true">fact_check</span>
               AMD_FINDINGS.md <em>· the Radeon build log</em>

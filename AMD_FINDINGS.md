@@ -115,6 +115,87 @@ project's AMD setup notes (`amd/tts_server_setup.md`).
 
 ---
 
+## 6. What else this pod could host in Prism's pipeline
+
+Prism is five model stages. Today four run on serverless providers and one (the
+voice) runs on the W7900 — but the pod can host **every one of them**. The honest
+map of what each stage would gain and give up on Radeon:
+
+| Stage | Runs today on | AMD-hostable model | If it moved to the W7900 |
+|---|---|---|---|
+| **Speech transcript** | Gemma 3n E4B (HF router) | Gemma 3n E4B | **+** no router 429s or `audio_url` format quirks · **−** model load + warm-up |
+| **Grounding (vision)** | Kimi / Qwen3-VL / Gemma-4 (APIs) | **Gemma-3-12B or Qwen2.5-VL** (both verified, §3) | **+** zero per-call cost, no rate limits, batch throughput · **−** Gemma-3 reads fine detail a notch below Kimi / Qwen3-VL-235B |
+| **Caption authorship** | Gemma-4-31B (HF) | Gemma-3 (Gemma-4 absent, §3) | **+** zero cost/limits · **−** a quality regression, or a risky vLLM upgrade to reach Gemma-4 |
+| **Fact anchor** | EmbeddingGemma (HF) | EmbeddingGemma | **+** fully local, trivial to serve · **−** negligible either way |
+| **Voice (TTS)** | **the W7900** | T5Gemma-TTS | already here — the shipped path |
+
+Two things stand out. **Four of five stages already have a working AMD model** — the
+only real gap is Gemma-4, and that is a vLLM build-date gap (§3), not a hardware
+one. And a single W7900 has the VRAM and throughput (§1, §2) to hold several of
+these at once, which is what makes the "one box, whole pipeline" idea in §8 realistic
+rather than aspirational.
+
+## 7. Why the graded pipeline stays on serverless APIs (and the voice does not)
+
+A deliberate engineering decision, not a limitation we failed to overcome.
+
+**The hackathon GPU is time-gated.** The pod is a time-limited session; the
+leaderboard, by contrast, **re-scores submissions repeatedly over days**. If Prism's
+*graded* captioning called a self-hosted endpoint on this pod, the moment the
+session expired every later scoring run would hit a dead endpoint — the container
+would error and the score would collapse toward zero. Availability during an unknown
+future scoring window is worth more than any per-call saving, so the graded path
+uses **always-on serverless providers on purpose**.
+
+**The voice is the exception precisely because it is not graded.** The listen button
+is a demo feature with a browser-speech fallback; if the pod expires it degrades
+gracefully to the browser voice and **nothing about the score changes**. That is the
+one place where the time-gate risk is free — so that is exactly where we put the AMD
+compute. The choice of *what* to self-host was driven by *what can tolerate the GPU
+going away*. Time-gated GPUs are excellent for everything except the one thing that
+must answer a call at an unpredictable later moment.
+
+## 8. If the GPU weren't time-gated: the all-AMD Prism
+
+Lift the time gate — a reserved or dedicated W7900 instead of a session — and the
+calculus inverts. Self-hosting stops being a liability and becomes the better
+architecture. This is the Prism we would build on persistent AMD silicon.
+
+**One box, the whole Gemma family.** Every stage collapses onto a single W7900:
+Gemma 3n *hears* → Gemma-3 / Qwen-VL *grounds* → Gemma *writes* → EmbeddingGemma
+*verifies* → T5Gemma *speaks*. Four external providers become one dependency; "four
+Gemma models, one agent" becomes "four Gemma models, one GPU."
+
+**What that unlocks, concretely:**
+- **Zero marginal cost per clip.** No Fireworks tokens, no HF Inference bills.
+  Captioning at scale shifts from per-call pricing to flat owned compute.
+- **No rate limits, no quota, no third-party outage.** The exact failure that cost
+  us the ZeroGPU voice for hours cannot happen on owned compute.
+- **Batch throughput as the design centre.** vLLM sustained ~700 tok/s across 32
+  streams (§2). The whole grading set could be captioned in one concurrent batch
+  instead of serial API calls — plausibly *faster* wall-clock than the API path.
+- **Spend the freed budget on quality.** With no per-call cost, the levers we
+  rationed for the API path return: more frames per clip, a real best-of-N over
+  several groundings, longer context, larger models. The pipeline can be more
+  thorough because thoroughness is no longer metered.
+- **Privacy and on-prem.** Clips never leave the machine. For a brand captioning
+  unreleased footage, an all-AMD Prism is a self-contained appliance that runs where
+  the video already lives.
+
+**How the architecture would actually change.** Today the grounding race hedges
+across providers to survive rate limits and outages; on a dedicated GPU that race
+becomes a local batch, and the hedge budget converts into *depth* (best-of-N, verify
+passes) instead of *redundancy*. The per-clip time-budget system that guards the 30s
+cap against congested APIs relaxes, because local inference latency is predictable.
+And the AMD story stops being a footnote about the voice and becomes the substrate of
+the whole agent.
+
+The time gate is the only thing standing between Prism-on-APIs and an all-AMD Prism
+that is cheaper, faster under batch, private, and unmetered. On persistent Radeon
+compute, self-hosting is not the compromise — it is the upgrade.
+
+---
+
 ## Summary: what AMD Radeon is the right tool for
 
 | Capability | Measured verdict on the W7900 |
