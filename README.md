@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="prism-logo-kit/png/prism-banner-1500x500.png" alt="Prism: one clip, refracted into four voices" width="880" />
+</p>
+
 # Prism: one clip, four voices, one Gemma brain
 
 Prism is a video-captioning agent built for the **AMD Developer Hackathon ACT II, Track 2**.
@@ -42,6 +46,8 @@ intentional engineering decision, not brand decoration. Set no `FIREWORKS_API_KE
 runs **pure-Gemma end to end**.
 
 ## Running on AMD
+
+<img src="assets/brand/amd-logo-red.png" alt="AMD" height="26" />
 
 Prism's Gemma voice is **synthesized on an AMD Radeon PRO W7900** (RDNA3, gfx1100)
 through **ROCm 7.2**. The demo's *listen* button speaks with T5Gemma-TTS hosted on

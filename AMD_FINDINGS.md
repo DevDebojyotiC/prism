@@ -1,3 +1,5 @@
+<img src="assets/brand/amd-logo-red.png" alt="AMD" height="30" />
+
 # AMD Radeon Findings, measured while building Prism
 
 Everything below was measured on the AMD hardware provisioned for the hackathon,
