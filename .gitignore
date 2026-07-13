@@ -52,3 +52,12 @@ test/stress_test.py
 web/prism-redesign_5.html
 web/PRISM_UI_BRIEF.md
 testio/
+
+# session scratch / local eval harness
+Dockerfile.kimi
+test/_probe/
+test/eval/
+test/g20/
+test/g20b/
+test/gk/
+test/smoke/

@@ -116,48 +116,82 @@ def ground(frame_paths: List[str], transcript: str = "",
                 except Exception:
                     small.append(p)
             picks = small
-        # three-way race, preference by measured accuracy on the public
-        # validation clips: Kimi > Qwen3-VL-235B > Gemma. All fire at once, so
-        # a losing rung never inherits an exhausted clock; a weaker answer is
-        # only used when every stronger model has already failed.
-        # hedges get 5 frames spread over the WHOLE clip, not the first five
+        # ── parallel grounding fleet: fastest STRONG answer wins ─────────────
+        # Fire Kimi + several router VLMs at once and take the fastest good
+        # answer, preferring the higher-ranked model within a short settle
+        # window. Robust to any one provider congesting: at peak Kimi (Fireworks)
+        # hits ~28-45s while the novita lanes stay ~4s, so a fast strong model
+        # carries the clip instead of the run stalling. Ranked best->worst:
+        # Kimi > ROUTER_FLEET (Qwen3-VL-235B, MiniMax-M3, ERNIE-4.5-VL). Gemma is
+        # the explicit floor, used only if every strong lane failed.
+        # router/gemma lanes get 5 frames spread over the WHOLE clip.
         if len(picks) > _MAX_IMAGES:
             hidx = sorted({round(i * (len(picks) - 1) / (_MAX_IMAGES - 1))
                            for i in range(_MAX_IMAGES)})
             hedge_picks = [picks[i] for i in hidx]
         else:
             hedge_picks = list(picks)
-        from concurrent.futures import ThreadPoolExecutor
-        ex = ThreadPoolExecutor(max_workers=3)
-        f_kimi = ex.submit(gc.kimi_describe, picks, _GROUND_PROMPT + extra,
-                           600, 60, deadline)
-        f_qwen = ex.submit(gc.hedge_vlm_describe, hedge_picks,
-                           _GROUND_PROMPT + extra, 600, 45, deadline)
-        f_gemma = ex.submit(gc.vision_describe, hedge_picks,
-                            _GROUND_PROMPT + extra, 600, 120, deadline)
-        ex.shutdown(wait=False)
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
         import sys as _sys
+        strong = []  # (rank, name, thunk)
+        rk = 0
+        if gc.kimi_available():
+            strong.append((rk, "kimi", lambda: gc.kimi_describe(
+                picks, _GROUND_PROMPT + extra, 600, 60, deadline,
+                reserve_for_fallback=False)))
+            rk += 1
+        for model in gc.ROUTER_FLEET:
+            name = model.split("/")[-1].split(":")[0].split("-")[0].lower()
+            strong.append((rk, name, (lambda m: lambda: gc.router_vlm_describe(
+                m, hedge_picks, _GROUND_PROMPT + extra, 600, 45, deadline))(model)))
+            rk += 1
+        ex = ThreadPoolExecutor(max_workers=len(strong) + 1)
+        gemma_fut = ex.submit(gc.vision_describe, hedge_picks,
+                              _GROUND_PROMPT + extra, 600, 120, deadline)
+        meta = {ex.submit(thunk): (rank, name) for (rank, name, thunk) in strong}
+        ex.shutdown(wait=False)
+        pending = set(meta)
         t_race = _t.time()
+        best = None       # (rank, name, text) — strong lanes only
+        first_good = None
+        GRACE = float(os.environ.get("PRISM_GROUND_GRACE", "2.5"))
+        while pending:
+            rem = (deadline - _t.time()) if deadline else 60.0
+            if rem <= 0.3:
+                break
+            done, pending = wait(pending, timeout=(0.4 if best else min(rem, 8.0)),
+                                 return_when=FIRST_COMPLETED)
+            for f in done:
+                rank, name = meta[f]
+                try:
+                    out = f.result()
+                except Exception:
+                    out = None
+                if out and len(out) > 40 and (best is None or rank < best[0]):
+                    best = (rank, name, out)
+            if best is not None:
+                if best[0] == 0:                      # top lane (healthy Kimi): take it
+                    break
+                if first_good is None:
+                    first_good = _t.time()
+                if _t.time() - first_good >= GRACE:   # waited enough for a better lane
+                    break
+        if best:
+            if best[1] == "kimi":
+                gc.LAST_BACKEND = "kimi"
+            print(f"[prism] ground winner={best[1]} in {_t.time()-t_race:.1f}s "
+                  f"({len(picks)} frames)", file=_sys.stderr)
+            return best[2]
+        # every strong lane failed -> Gemma floor (already running)
         try:
-            out = f_kimi.result()
+            out = gemma_fut.result(timeout=max(2.0, (deadline - _t.time()) if deadline else 60.0))
             if out:
-                gc.LAST_BACKEND = "kimi"  # the hedge threads may stomp it late
-                print(f"[prism] ground winner=kimi in {_t.time()-t_race:.1f}s "
+                print(f"[prism] ground winner=gemma(floor) in {_t.time()-t_race:.1f}s "
                       f"({len(picks)} frames)", file=_sys.stderr)
                 return out
         except Exception:
             pass
-        for fname, fut in (("qwen", f_qwen), ("gemma", f_gemma)):
-            try:
-                rem3 = max(2.0, (deadline - _t.time())) if deadline else 60.0
-                out = fut.result(timeout=rem3)
-                if out:
-                    print(f"[prism] ground winner={fname} in {_t.time()-t_race:.1f}s "
-                          f"({len(picks)} frames)", file=_sys.stderr)
-                    return out
-            except Exception:
-                pass
-        raise RuntimeError("hedged grounding failed")
+        raise RuntimeError("grounding fleet failed")
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], _GROUND_PROMPT + extra,
                               max_tokens=600, deadline=deadline)
 
@@ -183,22 +217,42 @@ def verify(frame_paths: List[str], description: str,
     return gc.vision_describe(frame_paths[:_MAX_IMAGES], prompt, max_tokens=560)
 
 
+# Caption length + specificity are env-tunable so we can A/B them on a local judge
+# without touching the graded defaults. Top-scoring peers use SHORT captions
+# (~8-32 words) and strip risk-prone specifics (cities, brands, on-screen text).
+_CAP_SENT = os.environ.get("PRISM_CAP_SENT", "2 to 4")
+_CAP_WORDS = os.environ.get("PRISM_CAP_WORDS", "40-120")
+_CAP_STRIP = os.environ.get("PRISM_CAP_STRIP", "0").strip().lower() in {"1", "true", "yes"}
+
+
 def stylize(description: str, styles: List[str],
-            deadline: Optional[float] = None) -> dict:
+            deadline: Optional[float] = None,
+            sent_range: Optional[str] = None,
+            word_range: Optional[str] = None,
+            strip_specifics: Optional[bool] = None) -> dict:
+    sent_range = sent_range or _CAP_SENT
+    word_range = word_range or _CAP_WORDS
+    strip = _CAP_STRIP if strip_specifics is None else strip_specifics
     ordered = [s for s in S.STYLE_ORDER if s in styles] or styles
     guide = S.guide_for(ordered)
     keys = ", ".join(f'"{s}"' for s in ordered)
+    strip_line = (
+        "Do NOT name cities, countries, landmarks, brands, logos, or on-screen text, "
+        "and do not state ethnicity/identity, even if they seem recognizable; refer to "
+        "them generically (a city street, a sports drink, a sign). "
+        if strip else ""
+    )
     user = (
         f"Here is a factual description of a short video:\n\"\"\"\n{description}\n\"\"\"\n\n"
         f"Write ONE caption for the video in EACH of these styles. Every caption must stay "
         f"faithful to the description above (same subjects and actions) while nailing its style:\n"
         f"{guide}\n\n"
         f"Make the four captions clearly DISTINCT from each other: different wording, angle, "
-        f"and rhythm, not four rephrasings of the same sentence. Pack in specific, concrete "
-        f"detail from the description; vague captions score poorly.\n"
+        f"and rhythm, not four rephrasings of the same sentence. Lead with the central subject "
+        f"and action; keep it specific and concrete, never vague. {strip_line}\n"
         f"Return ONLY a JSON object with exactly these keys: {keys}. Each value is a caption "
-        f"of 2 to 4 sentences (roughly 40-120 words), detailed and faithful to the "
-        f"description. No extra text."
+        f"of {sent_range} sentences (roughly {word_range} words), faithful to the description. "
+        f"No extra text."
     )
     raw = gc.chat(
         # 800 tokens: richer multi-sentence captions across 4 styles; a smaller

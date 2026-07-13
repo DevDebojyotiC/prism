@@ -41,3 +41,34 @@ TTS_SPACE=https://<your-tunnel>.ngrok.app
 Failover order at runtime: AMD notebook → public ZeroGPU Space (quota-capped) →
 the browser's own voice. The demo never loses the button; it only loses the
 Gemma voice when both hosts are down.
+
+## One speaker per sentence, synthesized in parallel
+
+The listen button splits the description into sentences and sends each as its own
+`/api/tts` call with a distinct `seed`. T5Gemma-TTS has no reference audio here, so
+it samples a fresh voice from its prior seeded by `seed` — a different seed is a
+different speaker. That is deliberate: it showcases the voice range of the model
+in one playback (each line is a new person). Seeds are fixed per sentence position
+(`web/app/page.js` → `VOICE_SEEDS`), so the demo sounds the same each run.
+
+Because the AMD host has no quota, the client fires every sentence at once (up to
+`MAX_TTS_PARALLEL`, default 8) instead of two at a time. Synthesis then overlaps
+playback and the next line is usually ready before its turn.
+
+**To actually synthesize those sentences concurrently on the box** (not just queue
+them), the app needs two changes — the stock Space runs `demo.launch()` with a
+single global model and gradio's default queue admits one job at a time:
+
+1. **Admit concurrent jobs.** Change the launch to
+   `demo.queue(default_concurrency_limit=8).launch()`. This lets 8 requests enter
+   the handler together instead of serializing in the queue.
+2. **Give them separate GPUs.** One model instance on one card still contends, so
+   for real 8-way throughput load one replica per W7900 and round-robin. Each
+   T5Gemma-TTS instance is a few GB and each card has 48 GB, so eight replicas fit
+   comfortably; pin them with `HIP_VISIBLE_DEVICES=0…7` (ROCm reads visible devices
+   through the CUDA API, so `torch.cuda.set_device` works unmodified — see
+   AMD_FINDINGS §5). A thin round-robin router in front (or gradio's own worker
+   pool over the eight) turns the eight cards into eight parallel voices.
+
+Step 1 is a one-line change and enough for the demo; step 2 is what makes "as many
+sentences as speakers, all at once" literally true on the hardware.

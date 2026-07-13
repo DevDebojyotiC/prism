@@ -16,6 +16,16 @@ const BACKENDS = {
 
 const CHIP_C = ["--formal", "--tech", "--sarcastic", "--nontech"];
 
+// Distinct, deterministic speakers — one per sentence — to show off the T5Gemma
+// voice range. With no reference audio, T5Gemma-TTS samples a fresh voice from
+// its prior seeded by `seed`, so widely-spaced seeds sound like different people;
+// the same sentence position always draws the same voice, so the demo is stable.
+const VOICE_SEEDS = [7, 42, 91, 158, 224, 305, 417, 536, 673, 812];
+// The voice runs on our own AMD W7900 (no quota), so we fire sentences in
+// parallel instead of two at a time. Capped at the browser's HTTP/1.1 per-origin
+// connection limit (~6) — beyond that requests just queue in the browser anyway.
+const MAX_TTS_PARALLEL = 6;
+
 // staged loading copy; Gemma names carry their lane colors
 const LOAD_MSGS = [
   <>Sampling frames across the clip…</>,
@@ -58,6 +68,8 @@ export default function Page() {
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState("");   // which host served the voice
+  const [speakingLine, setSpeakingLine] = useState(-1); // index of the speaker now playing
+  const [lineTotal, setLineTotal] = useState(0);        // how many distinct speakers this run
   const [mTab, setMTab] = useState("desc");   // desc | sound | script
   const fileRef = useRef(null);
 
@@ -108,6 +120,7 @@ export default function Page() {
     window.speechSynthesis?.cancel();
     if (gemmaAudio.current) { gemmaAudio.current.pause(); gemmaAudio.current = null; }
     setSpeaking(false); setVoiceLoading(false); setBuffering(false);
+    setSpeakingLine(-1); setLineTotal(0);
   }
 
   function browserSpeak(text) {
@@ -122,26 +135,44 @@ export default function Page() {
     synth.speak(u);
   }
 
-  // pack sentences into ~260-char chunks the TTS Space can turn around quickly
-  function ttsChunks(text) {
-    const sentences = text.match(/[^.!?]+[.!?]+["']?\s*|[^.!?]+$/g) || [text];
-    const chunks = [];
-    let cur = "";
-    for (const s of sentences) {
-      if ((cur + s).length > 260 && cur) { chunks.push(cur.trim()); cur = s; }
-      else cur += s;
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-    return chunks;
+  // browser-speak a SINGLE line and resolve when it finishes, so one failed TTS
+  // sentence degrades to the browser voice for that line only — the rest keep the
+  // Gemma voice. Never dumps the whole description to the browser on one hiccup.
+  function browserSpeakLine(text) {
+    return new Promise((res) => {
+      const synth = window.speechSynthesis;
+      if (!synth) return res();
+      setVoiceEngine((prev) => prev || "browser voice");
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.05;
+      u.onend = res;
+      u.onerror = res;
+      synth.speak(u);
+    });
   }
 
-  async function fetchTTS(text) {
+  // one sentence per chunk, so each gets its OWN speaker (the showcase). Tiny
+  // fragments ("Yes.") are glued to the previous line — a lone word makes a poor
+  // clip and a wasted speaker.
+  function ttsSentences(text) {
+    const raw = text.match(/[^.!?]+[.!?]+["']?\s*|[^.!?]+$/g) || [text];
+    const out = [];
+    for (const piece of raw) {
+      const s = piece.trim();
+      if (!s) continue;
+      if (out.length && s.length < 24) out[out.length - 1] += " " + s;
+      else out.push(s.slice(0, 400));   // backend hard-caps at 400 too
+    }
+    return out.length ? out : [text.slice(0, 400)];
+  }
+
+  async function fetchTTS(text, seed) {
     try {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 120000);
       const r = await fetch("/api/tts", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }), signal: ctl.signal,
+        body: JSON.stringify({ text, seed }), signal: ctl.signal,
       });
       clearTimeout(timer);
       const d = await r.json();
@@ -159,44 +190,46 @@ export default function Page() {
     });
   }
 
-  // Gemma voice, paired batches: chunks are synthesized two at a time, and the
-  // next pair is fired the moment the current pair starts playing, so synthesis
-  // hides behind playback while never committing more than ~2 calls of ZeroGPU
-  // quota ahead (each call bills a flat GPU window, so an early "stop" wastes at
-  // most one pair). If the next chunk isn't ready when its turn comes we WAIT
-  // (button shows "next line"); the browser voice takes over the remaining text
-  // only on a real error.
+  // Gemma voice, one speaker per sentence: every sentence is synthesized in
+  // PARALLEL (up to MAX_TTS_PARALLEL in flight), each with its own seed so each
+  // line is voiced by a different generated speaker — a live showcase of the
+  // T5Gemma voice range. Because the voice runs on our own AMD W7900 there is no
+  // quota to ration, so synthesis of the whole paragraph overlaps and the next
+  // line is almost always ready when its turn comes; we only WAIT (button shows
+  // "next voice") if it is not. The browser voice takes over only on a real error.
   async function speak(text) {
     if (speaking || voiceLoading) { stopSpeaking(); return; }
     const run = { aborted: false };
     voiceRun.current = run;
     setVoiceEngine("");
-    const chunks = ttsChunks(text);
-    const jobs = new Array(chunks.length).fill(null);
-    const fire = (i) => { if (i < chunks.length && !jobs[i] && !run.aborted) jobs[i] = fetchTTS(chunks[i]); };
-    fire(0); fire(1);                              // batch 1: sentences 1+2 in parallel
+    const lines = ttsSentences(text);
+    const seedFor = (i) => VOICE_SEEDS[i % VOICE_SEEDS.length];
+    const jobs = new Array(lines.length).fill(null);
+    const fire = (i) => { if (i < lines.length && !jobs[i] && !run.aborted) jobs[i] = fetchTTS(lines[i], seedFor(i)); };
+    for (let i = 0; i < Math.min(lines.length, MAX_TTS_PARALLEL); i++) fire(i);  // prime the burst
+    setLineTotal(lines.length);
     setVoiceLoading(true);
-    const first = await jobs[0];
+    let res = await jobs[0];
     if (run.aborted) return;
-    if (!first.audio) { setVoiceLoading(false); browserSpeak(text); return; }
-    if (first.engine) setVoiceEngine(first.engine);   // name the host that served the voice
+    if (res?.engine) setVoiceEngine(res.engine);   // name the host that served the voice
     setVoiceLoading(false);
     setSpeaking(true);
-    let res = first;
     for (let i = 0; !run.aborted; i++) {
-      if (i % 2 === 0) { fire(i + 2); fire(i + 3); }  // next pair, while this pair plays
-      await playUri(res.audio);
-      if (run.aborted || i + 1 >= chunks.length) break;
-      setBuffering(true);                          // waiting on the next line ≠ failure
+      fire(i + MAX_TTS_PARALLEL);                  // keep the parallel window full as we advance
+      setSpeakingLine(i);
+      if (res?.audio) {                            // Gemma voice for this line
+        if (res.engine) setVoiceEngine(res.engine);
+        await playUri(res.audio);
+      } else {                                     // this ONE line failed: browser fills it, rest keep TTS
+        await browserSpeakLine(lines[i]);
+      }
+      if (run.aborted || i + 1 >= lines.length) break;
+      setBuffering(true);                          // waiting on the next voice ≠ failure
       res = await jobs[i + 1];
       setBuffering(false);
       if (run.aborted) return;
-      if (!res.audio) {                            // real error: browser finishes the rest
-        browserSpeak(chunks.slice(i + 1).join(" "));
-        return;
-      }
     }
-    setBuffering(false);
+    setBuffering(false); setSpeakingLine(-1);
     if (!run.aborted) setSpeaking(false);
   }
 
@@ -506,9 +539,12 @@ export default function Page() {
                     </div>
                     {mTab === "desc" && (
                       <button className="listen" onClick={() => speak(result.description)}
-                              title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights). First audio takes ~20s; your browser's voice covers failures.">
+                              title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights). Every sentence is a different speaker, synthesized in parallel on the AMD W7900; your browser's voice covers failures.">
                         <span className="ms" aria-hidden="true">volume_up</span>
-                        {voiceLoading ? "synthesizing" : buffering ? "next line" : speaking ? "stop" : "listen"}
+                        {voiceLoading ? "synthesizing"
+                          : buffering ? "next voice"
+                          : speaking ? (lineTotal > 1 ? `stop · speaker ${speakingLine + 1}/${lineTotal}` : "stop")
+                          : "listen"}
                         {" "}<em>
                           {/AMD|W7900/i.test(voiceEngine)
                             ? <>· <span className="gmt5">T5Gemma</span> <span className="amd-chip">on AMD W7900</span></>
@@ -538,6 +574,10 @@ export default function Page() {
                     <>
                       <p className="d-text">{result.description}</p>
                       <div className="d-foot"><b>grounded description</b> · the facts all four captions are built from · verified per-caption by <span className="gme">EmbeddingGemma</span></div>
+                      <div className="voice-note">
+                        <span className="ms" aria-hidden="true">graphic_eq</span>
+                        <span>Press <b>listen</b>: every sentence is voiced by a <b>different speaker</b> — a live showcase of the <span className="gmt5">T5Gemma</span> voice range. Because the voice runs on our own <b className="amd-word">AMD</b> W7900 there is no quota to ration, so Prism requests the whole paragraph <b>in parallel</b> instead of two lines at a time.</span>
+                      </div>
                     </>
                   )}
                   {mTab === "sound" && result.heard && (
@@ -647,8 +687,8 @@ export default function Page() {
             <article className="model" style={{ "--c": "var(--nontech)" }}>
               <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">record_voice_over</span>SPEAKS</span></div>
               <div className="m-name gmt5">T5Gemma-TTS</div>
-              <p className="m-body">The listen button speaks with a community TTS built on <span className="gmt5">T5Gemma</span> weights, synthesized on an <b className="amd-word">AMD</b> Radeon PRO W7900 via ROCm.</p>
-              <p className="m-demo">in this demo: <b>the listen button</b></p>
+              <p className="m-body">The listen button speaks with a community TTS built on <span className="gmt5">T5Gemma</span> weights, synthesized on an <b className="amd-word">AMD</b> Radeon PRO W7900 via ROCm. Every sentence gets a <b>different speaker</b>, requested <b>in parallel</b> against our own un-quota&apos;d GPU.</p>
+              <p className="m-demo">in this demo: <b>the listen button — a different voice each line</b></p>
             </article>
           </div>
 
@@ -767,6 +807,26 @@ export default function Page() {
             </details>
           </div>
         </section>
+
+        {/* ══════════ WHERE PRISM GOES / ROADMAP ══════════ */}
+        <div className="next-cards">
+          <a className="grow-cta" href="/grow">
+            <div>
+              <div className="gc-eyebrow">One engine · nine markets</div>
+              <div className="gc-title">Where Prism goes next</div>
+              <div className="gc-desc">The refraction engine expands into nine markets, from video localization to a self-hosted insurance-claims pivot, each with firm-sourced TAM/SAM/SOM, incumbents, and pricing.</div>
+            </div>
+            <span className="ms" aria-hidden="true">arrow_forward</span>
+          </a>
+          <a className="grow-cta road-cta" href="/roadmap">
+            <div>
+              <div className="gc-eyebrow">Product roadmap</div>
+              <div className="gc-title">The road ahead</div>
+              <div className="gc-desc">Deeper into the Gemma family, onto AMD silicon, then onto the device. Shipped, next, and horizon.</div>
+            </div>
+            <span className="ms" aria-hidden="true">arrow_forward</span>
+          </a>
+        </div>
 
         {/* ══════════ FOOTER ══════════ */}
         <footer>

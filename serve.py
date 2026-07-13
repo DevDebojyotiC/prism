@@ -6,8 +6,10 @@ from __future__ import annotations
 import base64
 import os
 import tempfile
+import threading
 import time
 import uuid
+from typing import Optional
 
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
@@ -265,19 +267,45 @@ async def caption_upload(file: UploadFile = File(...)):
 
 class TTSReq(BaseModel):
     text: str
+    seed: Optional[int] = None   # a distinct seed => a distinct generated speaker
+                                 # (T5Gemma samples a fresh voice per seed when no
+                                 # reference audio is given). The client sends one
+                                 # seed per sentence to showcase the voice range.
 
 
-_tts = {"client": None}  # lazy; reused across requests
+_tts_pools = {}   # name -> list of IDLE gradio clients, reused across calls
+_tts_lock = threading.Lock()
+
+
+def _acquire_client(name):
+    """Hand out a client that no other in-flight call is using. gradio_client is
+    NOT safe for concurrent predict() on one shared instance, so each of the
+    parallel per-sentence calls gets its own; idle clients are pooled and reused
+    rather than rebuilt every time."""
+    with _tts_lock:
+        pool = _tts_pools.get(name)
+        if pool:
+            return pool.pop()
+    from gradio_client import Client   # build outside the lock (handshake is slow)
+    return Client(name, token=os.environ.get("HF_TOKEN"), verbose=False)
+
+
+def _release_client(name, client):
+    if client is None:
+        return
+    with _tts_lock:
+        _tts_pools.setdefault(name, []).append(client)
 
 
 @app.post("/api/tts")
 def tts(req: TTSReq):
-    """Demo-only: synthesize speech with T5Gemma-TTS (a community TTS built on
-    Google's T5Gemma weights) running on a HF ZeroGPU Space. The only live
-    Gemma-family voice we found: none of the 35 Gemma-TTS models on the Hub has
-    a serverless provider. The frontend falls back to the browser voice on any
-    failure or quota exhaustion."""
-    txt = " ".join(req.text.split())[:400]  # client sends sentence-chunks; hard safety cap only
+    """Demo-only: synthesize one sentence with T5Gemma-TTS (a community TTS built
+    on Google's T5Gemma weights). Because the AMD W7900 host has no quota, the
+    frontend fires every sentence in parallel, each with its own seed so each
+    line is spoken by a different generated speaker. The frontend falls back to
+    the browser voice on any failure."""
+    txt = " ".join(req.text.split())[:400]  # client sends one sentence; hard safety cap only
+    seed = "" if req.seed is None else str(int(req.seed))  # "" => model draws a random voice
     t0 = time.time()
     # host order: the AMD notebook (TTS_SPACE tunnel URL, no quota, Gemma voice
     # on AMD silicon) -> the public ZeroGPU Space (quota-capped). Same app, same
@@ -288,26 +316,25 @@ def tts(req: TTSReq):
         hosts.append((os.environ["TTS_SPACE"], "T5Gemma-TTS on AMD W7900"))
     hosts.append(("Aratako/T5Gemma-TTS-Demo", "T5Gemma-TTS"))
     last_err = "no audio produced"
-    from gradio_client import Client
     for name, label in hosts:
+        client = _acquire_client(name)
         try:
-            if _tts.get(name) is None:
-                _tts[name] = Client(name, token=os.environ.get("HF_TOKEN"), verbose=False)
-            out = _tts[name].predict(
+            out = client.predict(
                 reference_speech=None, reference_text=None, target_text=txt,
                 target_duration="", top_k=30, top_p=0.9, min_p=0.0,
-                temperature=0.8, seed="", num_samples=1,
+                temperature=0.8, seed=seed, num_samples=1,
                 api_name="/gradio_inference")
             first = out[0] if isinstance(out, (list, tuple)) else out
             if isinstance(first, dict):
                 first = first.get("value")
             if first and os.path.exists(first):
                 b64 = base64.b64encode(open(first, "rb").read()).decode("ascii")
-                return {"audio": "data:audio/wav;base64," + b64,
-                        "engine": label, "seconds": round(time.time() - t0, 1)}
+                _release_client(name, client)   # healthy: back to the pool
+                return {"audio": "data:audio/wav;base64," + b64, "engine": label,
+                        "seed": req.seed, "seconds": round(time.time() - t0, 1)}
+            _release_client(name, client)        # produced no file, but client is fine
         except Exception as e:
-            _tts[name] = None      # stale client (dead tunnel): rebuild next time
-            last_err = str(e)[:200]
+            last_err = str(e)[:200]              # broken client: drop it, don't pool
     return {"error": last_err}
 
 

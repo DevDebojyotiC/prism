@@ -196,9 +196,12 @@ def kimi_available() -> bool:
 
 def kimi_describe(frame_paths: List[str], prompt: str,
                   max_tokens: int = 600, timeout: int = 60,
-                  deadline: Optional[float] = None) -> str:
+                  deadline: Optional[float] = None,
+                  reserve_for_fallback: bool = True) -> str:
     """One Kimi vision call over individual frames. Raises on total failure so the
-    caller can fall back to the pure-Gemma path."""
+    caller can fall back. reserve_for_fallback=False lets Kimi use the FULL
+    remaining budget: the grounding path runs MiniMax/Gemma in parallel, so Kimi
+    holds nothing back for a fallback it doesn't have to wait for."""
     key = os.environ.get("FIREWORKS_API_KEY", "")
     if not key:
         raise RuntimeError("no FIREWORKS_API_KEY for Kimi grounding")
@@ -220,7 +223,7 @@ def kimi_describe(frame_paths: List[str], prompt: str,
                 # whole window: one slow call would leave every later attempt
                 # starting with under 2s
                 has_fallback = mi < len(KIMI_MODELS) - 1 or attempt < len(_BACKOFF)
-                if has_fallback and remaining > 9:
+                if reserve_for_fallback and has_fallback and remaining > 9:
                     eff_timeout = min(eff_timeout, remaining - 4.5)
             try:
                 r = requests.post(
@@ -252,16 +255,17 @@ def kimi_describe(frame_paths: List[str], prompt: str,
     raise RuntimeError(f"kimi grounding failed: {last}")
 
 
-# Second grounding rung (benchmarked on the 8 public validation clips):
-# Qwen3-VL-235B via the HF router ranked just under Kimi on accuracy and
-# richness (5.7s avg), clearly above the smaller VLMs. Same HF token.
-HEDGE_VLM = os.environ.get("PRISM_HEDGE_VLM", "Qwen/Qwen3-VL-235B-A22B-Instruct")
+# Second grounding rung: MiniMax-M3 (a vision model) via the HF router, pinned to
+# the novita provider (the bare model 403s on our token; :novita answers in ~6s
+# and reads on-screen text well). Same HF token as Gemma. Used ONLY when Kimi
+# fails; it never wins by merely being faster (see caption.ground).
+HEDGE_VLM = os.environ.get("PRISM_HEDGE_VLM", "MiniMaxAI/MiniMax-M3:novita")
 
 
 def hedge_vlm_describe(frame_paths: List[str], prompt: str,
                        max_tokens: int = 600, timeout: int = 45,
                        deadline: Optional[float] = None) -> str:
-    """One vision call to the hedge VLM (HF router). Raises on failure."""
+    """One vision call to the MiniMax hedge (HF router). Raises on failure."""
     token = os.environ.get("HF_TOKEN", "")
     if not token:
         raise RuntimeError("no HF_TOKEN for the hedge VLM")
@@ -298,6 +302,56 @@ def hedge_vlm_describe(frame_paths: List[str], prompt: str,
             if not _is_transient(e):
                 break
     raise RuntimeError(f"hedge VLM failed: {last}")
+
+
+# Parallel grounding fleet on the HF router (provider-pinned), ranked best->worst
+# by measured accuracy/reliability. Every lane fires at once alongside Kimi; the
+# fastest GOOD answer from the highest-ranked ready lane wins (see caption.ground).
+# Robust to a single provider congesting: at peak Kimi (Fireworks) hit ~28-45s
+# while these novita lanes stayed ~4s. Override with PRISM_ROUTER_FLEET.
+ROUTER_FLEET = tuple(
+    m.strip() for m in os.environ.get(
+        "PRISM_ROUTER_FLEET",
+        "Qwen/Qwen3-VL-235B-A22B-Instruct:novita,"
+        "MiniMaxAI/MiniMax-M3:novita,"
+        "baidu/ERNIE-4.5-VL-424B-A47B-Base-PT:novita",
+    ).split(",") if m.strip()
+)
+
+
+def router_vlm_describe(model: str, frame_paths: List[str], prompt: str,
+                        max_tokens: int = 600, timeout: int = 45,
+                        deadline: Optional[float] = None) -> str:
+    """One vision call to a model on the HF router (provider pinned via :suffix).
+    Single attempt, no internal retry: in the parallel fleet a dead lane is
+    covered by the others, so speed matters more than per-lane resilience."""
+    token = os.environ.get("HF_TOKEN", "")
+    if not token:
+        raise RuntimeError("no HF_TOKEN for router VLM")
+    content = [{"type": "text", "text": prompt}]
+    for p in frame_paths:
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{_b64_image(p)}"}})
+    eff = float(timeout)
+    if deadline is not None:
+        remaining = deadline - time.time()
+        if remaining < 2:
+            raise RuntimeError("router VLM deadline exhausted")
+        eff = min(eff, remaining)
+    r = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
+              "messages": [{"role": "user", "content": content}]},
+        timeout=eff,
+    )
+    r.raise_for_status()
+    out = (r.json()["choices"][0]["message"].get("content") or "").strip()
+    if "</think>" in out:
+        out = out.split("</think>", 1)[1].strip()
+    if not out:
+        raise RuntimeError(f"{model} returned empty")
+    return out
 
 
 def vision_describe(frame_paths: List[str], prompt: str,
