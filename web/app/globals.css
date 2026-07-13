@@ -363,6 +363,13 @@ body[data-state="results"] .hero,body[data-state="results"] .io{display:none}
 .badge.amd .dot{background:var(--amd);box-shadow:0 0 10px var(--amd)}
 footer .amd-line{margin-top:8px}
 footer .amd-line b{color:var(--amd);font-weight:700}
+/* AMD section: red stat icons + red findings link (mirrors the Gemma section) */
+#amd .sec-head h3 .amd-word{font-weight:700}
+#amd .stat .k .ms.amd-ic{background:none;-webkit-text-fill-color:var(--amd);color:var(--amd)}
+.findings.amd{border-color:color-mix(in srgb,var(--amd) 50%,var(--line));
+  background:color-mix(in srgb,var(--amd) 9%,transparent)}
+.findings.amd:hover{border-color:var(--amd);background:color-mix(in srgb,var(--amd) 15%,transparent)}
+.findings.amd .ms{color:var(--amd)}
 .d-tabs{display:inline-flex;gap:4px;margin:12px 0 12px;padding:3px;border-radius:10px;background:var(--tab-bg);border:1px solid var(--line)}
 .d-tabs button{border:0;background:transparent;color:var(--ink-faint);cursor:pointer;
   padding:6px 13px;border-radius:7px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.04em;
