@@ -369,7 +369,12 @@ body[data-state="results"] .hero,body[data-state="results"] .io{display:none}
 .lang{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);
   font-family:var(--mono);font-size:11.5px;font-weight:600;padding:8px 30px 8px 13px;border-radius:999px;cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%23888da3' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right 12px center}
+  background-repeat:no-repeat;background-position:right 12px center;color-scheme:dark}
+html[data-theme="light"] .lang{color-scheme:light}
+/* the UA popup ignores page tokens; pin option colors so the list is
+   readable in both themes (Chromium renders options with these) */
+.lang option{background:var(--bg-2);color:var(--ink);font-weight:400}
+.lang:disabled{opacity:.55;cursor:wait}
 .v-note{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
 .v-note b{color:var(--ink);font-weight:600}
 .v-note a{color:var(--ink-dim);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
