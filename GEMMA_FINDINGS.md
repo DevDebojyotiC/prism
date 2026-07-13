@@ -1,3 +1,5 @@
+<img src="assets/brand/gemma-wordmark.png" alt="Gemma" height="32" />
+
 # Gemma-4 Capability Findings, measured while building Prism
 
 Everything below was **measured by us, on live endpoints, while building Prism**,
