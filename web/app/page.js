@@ -284,6 +284,7 @@ export default function Page() {
           </a>
           <div className="badges">
             <span className="badge gem"><span className="dot" /> Powered by&nbsp;<b className="gm">4 Gemma models</b></span>
+            <span className="badge amd" title="The Gemma voice is synthesized on an AMD Radeon PRO W7900 (ROCm)"><span className="dot" /> Voice on&nbsp;<b className="amd-word">AMD</b>&nbsp;Radeon W7900</span>
             <button className="theme" onClick={toggleTheme} aria-label="Switch color theme" title="Switch theme">
               <span className="ms i-sun" aria-hidden="true">light_mode</span>
               <span className="ms i-moon" aria-hidden="true">dark_mode</span>
@@ -646,7 +647,7 @@ export default function Page() {
             <article className="model" style={{ "--c": "var(--nontech)" }}>
               <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">record_voice_over</span>SPEAKS</span></div>
               <div className="m-name gmt5">T5Gemma-TTS</div>
-              <p className="m-body">The listen button speaks with a community TTS built on <span className="gmt5">T5Gemma</span> weights, synthesized on an AMD Radeon W7900.</p>
+              <p className="m-body">The listen button speaks with a community TTS built on <span className="gmt5">T5Gemma</span> weights, synthesized on an <b className="amd-word">AMD</b> Radeon PRO W7900 via ROCm.</p>
               <p className="m-demo">in this demo: <b>the listen button</b></p>
             </article>
           </div>
@@ -731,6 +732,7 @@ export default function Page() {
           <div className="rule" />
           <p>Prism · AMD Developer Hackathon ACT II · Track 2<br />
              every caption authored by <b className="gm4">Gemma-4</b> · built on Google DeepMind&apos;s open-weights <b className="gm">Gemma</b> family</p>
+          <p className="amd-line">Gemma voice synthesized on an <b>AMD</b> Radeon PRO W7900 · ROCm 7.2 · gfx1100</p>
         </footer>
       </main>
     </>

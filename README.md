@@ -41,6 +41,22 @@ frontier model *for perception only*, while Gemma authors every word, is a docum
 intentional engineering decision, not brand decoration. Set no `FIREWORKS_API_KEY` and Prism
 runs **pure-Gemma end to end**.
 
+## Running on AMD
+
+Prism's Gemma voice is **synthesized on an AMD Radeon PRO W7900** (RDNA3, gfx1100)
+through **ROCm 7.2**. The demo's *listen* button speaks with T5Gemma-TTS hosted on
+that AMD silicon, and the API response names the hardware (`engine: "T5Gemma-TTS on
+AMD W7900"`), surfaced live on the button as an **AMD**-red badge. Getting there
+meant building the T5Gemma stack against the notebook's matched ROCm 7.2 / PyTorch
+2.9 environment, routing model pulls through a mirror, and tunnelling the endpoint
+back to the demo, all on Radeon compute.
+
+Beyond the voice, Gemma-4 styling carries an **AMD-hosted failover tier**
+(`AMD_GEMMA_BASE_URL`, labelled *Gemma-3 · AMD W7900* in the meta pills), so the
+language brain itself can run on Radeon hardware when configured. AMD compute is
+credited wherever it does real work and nowhere it does not: the graded captioning
+path uses serverless providers, while the Gemma *voice* is genuinely AMD-hosted.
+
 ## How it works
 
 ```mermaid
