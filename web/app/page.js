@@ -57,6 +57,7 @@ export default function Page() {
   const [speaking, setSpeaking] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [buffering, setBuffering] = useState(false);
+  const [voiceEngine, setVoiceEngine] = useState("");   // which host served the voice
   const [mTab, setMTab] = useState("desc");   // desc | sound | script
   const fileRef = useRef(null);
 
@@ -116,6 +117,7 @@ export default function Page() {
     u.rate = 1.05;
     u.onend = () => setSpeaking(false);
     u.onerror = () => setSpeaking(false);
+    setVoiceEngine("browser voice");
     setSpeaking(true);
     synth.speak(u);
   }
@@ -143,7 +145,7 @@ export default function Page() {
       });
       clearTimeout(timer);
       const d = await r.json();
-      return d.audio ? { audio: d.audio } : { error: d.error || "no audio" };
+      return d.audio ? { audio: d.audio, engine: d.engine } : { error: d.error || "no audio" };
     } catch { return { error: "network" }; }
   }
 
@@ -168,6 +170,7 @@ export default function Page() {
     if (speaking || voiceLoading) { stopSpeaking(); return; }
     const run = { aborted: false };
     voiceRun.current = run;
+    setVoiceEngine("");
     const chunks = ttsChunks(text);
     const jobs = new Array(chunks.length).fill(null);
     const fire = (i) => { if (i < chunks.length && !jobs[i] && !run.aborted) jobs[i] = fetchTTS(chunks[i]); };
@@ -176,6 +179,7 @@ export default function Page() {
     const first = await jobs[0];
     if (run.aborted) return;
     if (!first.audio) { setVoiceLoading(false); browserSpeak(text); return; }
+    if (first.engine) setVoiceEngine(first.engine);   // name the host that served the voice
     setVoiceLoading(false);
     setSpeaking(true);
     let res = first;
@@ -504,7 +508,13 @@ export default function Page() {
                               title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights). First audio takes ~20s; your browser's voice covers failures.">
                         <span className="ms" aria-hidden="true">volume_up</span>
                         {voiceLoading ? "synthesizing" : buffering ? "next line" : speaking ? "stop" : "listen"}
-                        {" "}<em>· <span className="gmt5">T5Gemma</span></em>
+                        {" "}<em>
+                          {/AMD|W7900/i.test(voiceEngine)
+                            ? <>· <span className="gmt5">T5Gemma</span> <span className="amd-chip">on AMD W7900</span></>
+                            : /browser/i.test(voiceEngine)
+                            ? <>· browser voice</>
+                            : <>· <span className="gmt5">T5Gemma</span></>}
+                        </em>
                       </button>
                     )}
                   </div>
