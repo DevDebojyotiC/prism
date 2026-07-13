@@ -53,9 +53,8 @@ back to the demo, all on Radeon compute.
 
 Beyond the voice, Gemma-4 styling carries an **AMD-hosted failover tier**
 (`AMD_GEMMA_BASE_URL`, labelled *Gemma-3 · AMD W7900* in the meta pills), so the
-language brain itself can run on Radeon hardware when configured. AMD compute is
-credited wherever it does real work and nowhere it does not: the graded captioning
-path uses serverless providers, while the Gemma *voice* is genuinely AMD-hosted.
+language brain itself can run on Radeon hardware when configured. The graded
+captioning path uses serverless providers; the Gemma *voice* runs on AMD.
 
 ## How it works
 

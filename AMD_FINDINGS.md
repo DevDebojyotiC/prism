@@ -6,12 +6,10 @@ shaped Prism, the consequence is stated. This is the companion to
 [GEMMA_FINDINGS](GEMMA_FINDINGS.md): that one is about the models, this one is
 about the silicon they can run on.
 
-**The honest scope, stated up front.** Prism's *graded* captioning path uses
-serverless providers, not AMD. AMD compute does one real, shipped job: it
-**synthesizes Prism's Gemma voice** (T5Gemma-TTS), live in the demo, with the
-hardware named in the API response. Everything below is either that shipped path
-or capability we verified on the box. We credit AMD where it does real work and
-nowhere it does not.
+**Scope.** Prism's *graded* captioning path uses serverless providers, not AMD.
+AMD compute does one shipped job: it **synthesizes Prism's Gemma voice**
+(T5Gemma-TTS), live in the demo, with the hardware named in the API response.
+Everything below is either that shipped path or capability we verified on the box.
 
 ---
 
@@ -118,8 +116,8 @@ project's AMD setup notes (`amd/tts_server_setup.md`).
 ## 6. What else this pod could host in Prism's pipeline
 
 Prism is five model stages. Today four run on serverless providers and one (the
-voice) runs on the W7900 — but the pod can host **every one of them**. The honest
-map of what each stage would gain and give up on Radeon:
+voice) runs on the W7900 — but the pod can host **every one of them**. What each
+stage would gain and give up on Radeon:
 
 | Stage | Runs today on | AMD-hostable model | If it moved to the W7900 |
 |---|---|---|---|
@@ -137,7 +135,7 @@ rather than aspirational.
 
 ## 7. Why the graded pipeline stays on serverless APIs (and the voice does not)
 
-A deliberate engineering decision, not a limitation we failed to overcome.
+A deliberate design choice, driven by how the scoring works.
 
 **The hackathon GPU is time-gated.** The pod is a time-limited session; the
 leaderboard, by contrast, **re-scores submissions repeatedly over days**. If Prism's
