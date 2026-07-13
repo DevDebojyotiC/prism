@@ -15,11 +15,26 @@ const BACKENDS = {
 };
 
 const CHIP_C = ["--formal", "--tech", "--sarcastic", "--nontech"];
-const LOAD_MSGS = ["Sampling frames…", "Vision race is grounding the clip…", "Refracting into four voices…"];
+
+// staged loading copy; Gemma names carry their lane colors
+const LOAD_MSGS = [
+  <>Sampling frames across the clip…</>,
+  <><span className="gm3n">Gemma 3n</span> is listening to the soundtrack…</>,
+  <>Grounding race is reading the frames…</>,
+  <><span className="gm4">Gemma-4</span> is refracting into four voices…</>,
+];
 
 function basename(u) {
   try { return decodeURIComponent(u.split("/").pop().split("?")[0]) || u; }
   catch { return u; }
+}
+
+// served-by pill: color the Gemma-4 part of the backend label
+function servedBy(label) {
+  if (label?.startsWith("Gemma-4")) {
+    return <b><span className="gm4">Gemma-4</span>{label.slice("Gemma-4".length)}</b>;
+  }
+  return <b>{label}</b>;
 }
 
 export default function Page() {
@@ -34,7 +49,6 @@ export default function Page() {
   const [videoSrc, setVideoSrc] = useState(null);
   const [sourceLabel, setSourceLabel] = useState("");
   const [loadStage, setLoadStage] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [copied, setCopied] = useState(null);
   const [languages, setLanguages] = useState(["English"]);
   const [lang, setLang] = useState("English");
@@ -43,46 +57,12 @@ export default function Page() {
   const [speaking, setSpeaking] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [buffering, setBuffering] = useState(false);
-  const [mTab, setMTab] = useState("desc");   // description | sound | transcript
+  const [mTab, setMTab] = useState("desc");   // desc | sound | script
   const fileRef = useRef(null);
-  const sceneRef = useRef(null);
-  const outRef = useRef(null);
 
   // Drive the CSS state machine via body attributes (matches the design system).
   useEffect(() => { document.body.dataset.state = phase; }, [phase]);
   useEffect(() => { document.body.dataset.tab = tab; }, [tab]);
-
-  // Lock the optical axis (incoming beam → prism → output rays) to the vertical
-  // center of the word "out" so the single beam cuts cleanly through it. The two
-  // are in separate grid columns, so this can't be done with static CSS; measure
-  // and re-measure on resize, font load, and layout changes.
-  useEffect(() => {
-    const align = () => {
-      const scene = sceneRef.current, out = outRef.current;
-      if (!scene) return;
-      // Side-by-side layout only; stacked mobile layout keeps the beam centered.
-      if (!out || window.matchMedia("(max-width:980px)").matches) {
-        scene.style.setProperty("--axis", "50%"); return;
-      }
-      const sr = scene.getBoundingClientRect();
-      if (sr.height === 0) return; // hero hidden (results view)
-      // "Four voices out." can wrap; target the LAST visual line (where "out."
-      // sits), not the span's overall center, otherwise the beam lands in the
-      // gap between lines. A Range gives one rect per line box.
-      const range = document.createRange();
-      range.selectNodeContents(out);
-      const rects = range.getClientRects();
-      const line = rects.length ? rects[rects.length - 1] : out.getBoundingClientRect();
-      scene.style.setProperty("--axis", `${(line.top + line.height / 2) - sr.top}px`);
-    };
-    align();
-    const raf = requestAnimationFrame(align);
-    const ro = new ResizeObserver(align);
-    ro.observe(document.documentElement);
-    window.addEventListener("resize", align);
-    document.fonts?.ready?.then(align).catch(() => {});
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener("resize", align); };
-  }, [phase]);
 
   useEffect(() => {
     fetch("/api/samples").then((r) => r.json())
@@ -90,27 +70,15 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // Cosmetic staged progress while the real request is in flight.
+  // Staged progress while the real request is in flight; the fetch resolving
+  // (phase change) ends it, never a fixed timer.
   useEffect(() => {
     if (phase !== "loading") return;
     setLoadStage(0);
-    const t1 = setTimeout(() => setLoadStage(1), 1000);
-    const t2 = setTimeout(() => setLoadStage(2), 2000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [phase]);
-
-  // Indeterminate bar: eases asymptotically toward 92% and holds; it never
-  // completes on its own or loops. Driven per-frame (no CSS transition, which
-  // wedges when triggered by the display:none→block reveal). The results view
-  // replaces it the moment content arrives; resets to 0 for each new run.
-  useEffect(() => {
-    if (phase !== "loading") { setProgress(0); return; }
-    const start = performance.now();
-    const id = setInterval(() => {
-      const t = (performance.now() - start) / 1000;  // seconds elapsed
-      setProgress(92 * (1 - Math.exp(-t / 5)));       // asymptote to 92%, never reaches it
-    }, 60);
-    return () => clearInterval(id);
+    const t1 = setTimeout(() => setLoadStage(1), 800);
+    const t2 = setTimeout(() => setLoadStage(2), 1600);
+    const t3 = setTimeout(() => setLoadStage(3), 2400);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [phase]);
 
   function toggleTheme() {
@@ -126,6 +94,7 @@ export default function Page() {
   }
 
   function reset() {
+    stopSpeaking();
     setResult(null); setError(""); setVideoSrc(null); setFile(null); setUrl("");
     setPhase("input");
   }
@@ -278,12 +247,19 @@ export default function Page() {
     if (f) { setFile(f); runUpload(f); }
   }
 
+  // per-run receipt numbers, computed from the response
+  const captionWords = result
+    ? STYLES.reduce((n, s) => n + ((result.captions?.[s.key] || "").trim().split(/\s+/).filter(Boolean).length), 0)
+    : 0;
+  const heardAudio = !!(result?.transcript || result?.heard);
+  const scoredCount = result ? STYLES.filter((s) => result.anchors?.[s.key] != null).length : 0;
+
   return (
     <>
       <div className="aurora"><div className="a3" /></div>
       <div className="grain" />
 
-      {/* ══════ HEADER ══════ */}
+      {/* ══════════ HEADER ══════════ */}
       <header className="wrap">
         <div className="top">
           <a className="brand" href="#" onClick={(e) => { e.preventDefault(); reset(); }}>
@@ -303,31 +279,26 @@ export default function Page() {
             </div>
           </a>
           <div className="badges">
-            <span className="badge"><span className="dot" /> Powered by&nbsp;<b>Gemma-4</b></span>
+            <span className="badge gem"><span className="dot" /> Powered by&nbsp;<b className="gm">4 Gemma models</b></span>
             <button className="theme" onClick={toggleTheme} aria-label="Switch color theme" title="Switch theme">
-              <svg className="i-sun" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M8 1v1.8M8 13.2V15M15 8h-1.8M2.8 8H1M12.95 3.05l-1.27 1.27M4.32 11.68l-1.27 1.27M12.95 12.95l-1.27-1.27M4.32 4.32 3.05 3.05" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <svg className="i-moon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-                <path d="M13 9.2A5.8 5.8 0 0 1 5.8 2 5.9 5.9 0 1 0 13 9.2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-              </svg>
+              <span className="ms i-sun" aria-hidden="true">light_mode</span>
+              <span className="ms i-moon" aria-hidden="true">dark_mode</span>
             </button>
           </div>
         </div>
       </header>
 
       <main className="wrap">
-        {/* ══════ HERO ══════ */}
+        {/* ══════════ HERO ══════════ */}
         <section className="hero">
           <div>
-            <div className="eyebrow">Four Gemma models · one agent · every graded word is Gemma's</div>
-            <h2>One clip in.<span className="out" ref={outRef}>Four voices out.</span></h2>
+            <div className="eyebrow"><span className="eb">Four <span className="gm">Gemma</span> models · one agent · every graded word is <span className="gm">Gemma&apos;s</span></span></div>
+            <h2>One clip in.<span className="out">Four voices out.</span></h2>
             <p>
-              Prism samples high-res frames from your video, grounds them into one
-              factual description, then <b>Gemma-4</b> writes every word of all four
-              caption styles, while <b>Gemma 3n</b> listens, <b>EmbeddingGemma</b> verifies,
-              and <b>T5Gemma</b> speaks. You see <b>exactly what the models saw</b>.
+              Prism samples high-res frames from your video and grounds them into one factual description.
+              Then <b className="gm4">Gemma-4</b> writes every word of all four caption styles, while{" "}
+              <b className="gm3n">Gemma&nbsp;3n</b> listens, <b className="gme">EmbeddingGemma</b> verifies,
+              and <b className="gmt5">T5Gemma</b> speaks. You see <b>exactly what the models saw</b>.
             </p>
             <div className="swatches" aria-hidden="true">
               {STYLES.map((s) => (
@@ -338,7 +309,7 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="scene" aria-hidden="true" ref={sceneRef}>
+          <div className="scene" aria-hidden="true">
             <div className="optic">
               <div className="ray-in" />
               <div className="glass">
@@ -399,13 +370,13 @@ export default function Page() {
           </div>
         </section>
 
-        {/* ══════ INPUT CARD ══════ */}
+        {/* ══════════ INPUT ══════════ */}
         <section className="io">
           <div className="io-inner">
             <div className="tabs" role="tablist" aria-label="Input mode">
-              <button role="tab" aria-selected={tab === "upload"} onClick={() => setTab("upload")}>Upload</button>
-              <button role="tab" aria-selected={tab === "link"} onClick={() => setTab("link")}>Paste link</button>
-              <button role="tab" aria-selected={tab === "sample"} onClick={() => setTab("sample")}>Samples</button>
+              <button role="tab" aria-selected={tab === "upload"} onClick={() => setTab("upload")}><span className="ms" aria-hidden="true">upload</span>Upload</button>
+              <button role="tab" aria-selected={tab === "link"} onClick={() => setTab("link")}><span className="ms" aria-hidden="true">link</span>Paste link</button>
+              <button role="tab" aria-selected={tab === "sample"} onClick={() => setTab("sample")}><span className="ms" aria-hidden="true">movie</span>Samples</button>
             </div>
 
             <div className="panel p-upload" role="tabpanel">
@@ -415,16 +386,12 @@ export default function Page() {
                    onDragOver={(e) => { e.preventDefault(); setHot(true); }}
                    onDragLeave={() => setHot(false)}
                    onDrop={onDrop}>
-                <svg className="glyph" viewBox="0 0 44 44" fill="none" aria-hidden="true">
-                  <rect className="glyph-frame" x="6" y="10" width="32" height="24" rx="4" strokeWidth="1.6" />
-                  <path d="M22 28V17m0 0-5 5m5-5 5 5" stroke="url(#lg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <span className="ms glyph" aria-hidden="true">cloud_upload</span>
                 <div className="big">Drop a clip here, or click to choose</div>
                 <div className="small"><b>MP4 · MOV · WebM</b>, same pipeline the grader runs</div>
                 <input ref={fileRef} type="file" accept="video/*" hidden
                        onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); runUpload(f); } }} />
               </div>
-              {file && <div className="fileline">▶ {file.name}</div>}
             </div>
 
             <div className="panel p-link" role="tabpanel">
@@ -432,7 +399,9 @@ export default function Page() {
                 <input type="url" placeholder="https://…/clip.mp4" aria-label="Video URL"
                        value={url} onChange={(e) => setUrl(e.target.value)}
                        onKeyDown={(e) => e.key === "Enter" && url && runLink(url)} />
-                <button className="btn" disabled={!url} onClick={() => url && runLink(url)}>Refract</button>
+                <button className="btn" disabled={!url} onClick={() => url && runLink(url)}>
+                  <span className="ms" aria-hidden="true">flare</span>Refract
+                </button>
               </div>
             </div>
 
@@ -442,15 +411,15 @@ export default function Page() {
                   <button key={s.id} className="chip" style={{ "--c": `var(${CHIP_C[i % CHIP_C.length]})` }}
                           onClick={() => runLink(s.url)}>
                     <span className="thumb" />
-                    <span><span className="lab">{s.label}</span><span className="csub">sample · click to refract</span></span>
+                    <span><span className="lab">{s.label}</span><span className="sub">sample · click to refract</span></span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div className={"err" + (error ? " show" : "")} role="alert">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5 15 14H1L8 1.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6v3.4M8 11.6v.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-              <span><b>Couldn't refract this clip.</b> {error}</span>
+              <span className="ms" style={{ fontSize: 17 }} aria-hidden="true">warning</span>
+              <span><b>Couldn&apos;t refract this clip.</b> <span>{error}</span></span>
             </div>
 
             <div className="loadingbox" aria-live="polite">
@@ -458,26 +427,43 @@ export default function Page() {
                 <h3>{LOAD_MSGS[loadStage]}</h3>
                 {sourceLabel && <span className="lb-file">{sourceLabel}</span>}
               </div>
-              <div className="track"><div className="fill" style={{ transform: `scaleX(${progress / 100})` }} /></div>
+              <div className="track"><div className="fill" /></div>
               <div className="stages">
-                <div className={"stage" + (loadStage >= 0 ? " on" : "")}><div className="st-k"><i />01 · Frames</div><div className="st-v">Sample frames across the clip</div></div>
-                <div className={"stage" + (loadStage >= 1 ? " on" : "")}><div className="st-k"><i />02 · Vision</div><div className="st-v">Grounding race reads the frames</div></div>
-                <div className={"stage" + (loadStage >= 2 ? " on" : "")}><div className="st-k"><i />03 · Refraction</div><div className="st-v">Split into four voices</div></div>
+                <div className={"stage" + (loadStage >= 0 ? " on" : "")}>
+                  <div className="st-k"><span className="ms" aria-hidden="true">photo_library</span>01 · Frames</div>
+                  <div className="st-v">Sample frames across the clip</div>
+                  <div className="st-m">up to sixteen high-res stills</div>
+                </div>
+                <div className={"stage" + (loadStage >= 1 ? " on" : "")}>
+                  <div className="st-k"><span className="ms" aria-hidden="true">hearing</span>02 · Audio</div>
+                  <div className="st-v"><span className="gm3n">Gemma 3n</span> hears the soundtrack</div>
+                  <div className="st-m">28-second chunks on a side thread</div>
+                </div>
+                <div className={"stage" + (loadStage >= 2 ? " on" : "")}>
+                  <div className="st-k"><span className="ms" aria-hidden="true">visibility</span>03 · Vision</div>
+                  <div className="st-v">Grounding race reads the frames</div>
+                  <div className="st-m"><b className="gm4">Gemma-4</b> runs the always-on last lane</div>
+                </div>
+                <div className={"stage" + (loadStage >= 3 ? " on" : "")}>
+                  <div className="st-k"><span className="ms" aria-hidden="true">flare</span>04 · Refraction</div>
+                  <div className="st-v">Split into four voices</div>
+                  <div className="st-m"><b className="gm4">Gemma-4</b> writes · <b className="gme">EmbeddingGemma</b> verifies</div>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ══════ RESULTS ══════ */}
+        {/* ══════════ RESULTS ══════════ */}
         {result && (
           <section className="results">
             <div className="res-head">
               <div>
-                <div className="eyebrow">Refraction complete{result.timing?.total ? ` · ${result.timing.total}s` : ""}</div>
+                <div className="eyebrow"><span className="eb">Refraction complete{result.timing?.total ? <> · {result.timing.total}s</> : null} · every word below is <span className="gm">Gemma&apos;s</span></span></div>
                 <h2>One clip, <span>four voices</span>.</h2>
               </div>
               <button className="again" onClick={reset}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 1 1 7 2c1.7 0 3.2.85 4.1 2.14M11.5 1.5v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <span className="ms" style={{ fontSize: 15 }} aria-hidden="true">refresh</span>
                 Refract another
               </button>
             </div>
@@ -485,83 +471,94 @@ export default function Page() {
             <div className="res-grid">
               <aside className="evidence">
                 <div className="ev-sec">
-                  <div className="ev-k">Source clip</div>
+                  <div className="ev-k"><span className="ms" aria-hidden="true">movie</span>Source clip</div>
                   {videoSrc
                     ? <video className="video-el" src={videoSrc} controls autoPlay muted loop playsInline />
-                    : <div className="video-ph"><span className="fn">{sourceLabel}</span></div>}
+                    : <div className="video-ph"><span className="play" /><span className="fn">{sourceLabel}</span></div>}
                 </div>
                 <div className="ev-sec">
-                  <div className="ev-k">What the model sees</div>
+                  <div className="ev-k"><span className="ms" aria-hidden="true">visibility</span>What the models see</div>
                   <div className="montage">
-                    {result.montage && <img className="montage-img" src={result.montage} alt="frame montage" />}
+                    {result.montage && <img src={result.montage} alt="frame montage" />}
                     <div className="scan" />
                   </div>
-                  <p className="m-cap"><b>{result.frame_count} frames, sampled across the clip</b> (shown tiled here), sent to the grounding race at full resolution, in time order.</p>
+                  <p className="m-cap"><b>{result.frame_count} frames, one image.</b> Read left→right, top→bottom in time. These are the only pixels any model receives.</p>
                 </div>
               </aside>
 
               <div>
-                <div className="ground">
-                  <div className="gtitle">{result.title || "Untitled clip"}</div>
-                  {sourceLabel && (
-                    <div className="gsource" title={sourceLabel}>
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                        <path d="M6.4 6.3l3.6 1.9-3.6 1.9z" fill="currentColor" />
-                      </svg>
-                      <span>{sourceLabel}</span>
-                    </div>
-                  )}
-                  <div className="gk-row">
-                    <div className="tabs mini" role="tablist" aria-label="What the model understood">
-                      <button role="tab" aria-selected={mTab === "desc"} onClick={() => setMTab("desc")}>Description</button>
-                      {result.heard && (
-                        <button role="tab" aria-selected={mTab === "sound"} onClick={() => setMTab("sound")}>Soundtrack</button>
-                      )}
-                      {result.transcript && (
-                        <button role="tab" aria-selected={mTab === "transcript"} onClick={() => setMTab("transcript")}>Transcript</button>
+                {/* description card: title, file, tabs (Gemma lanes), listen (T5Gemma) */}
+                <article className="dcard">
+                  <div className="d-top">
+                    <div>
+                      <div className="d-title">{result.title || "Untitled clip"}</div>
+                      {sourceLabel && (
+                        <div className="d-file">
+                          <span className="ms" style={{ fontSize: 13 }} aria-hidden="true">video_file</span>
+                          {sourceLabel}
+                        </div>
                       )}
                     </div>
                     {mTab === "desc" && (
-                      <button className={"listen" + (speaking ? " on" : "") + (voiceLoading || buffering ? " load" : "")}
-                              onClick={() => speak(result.description)}
-                              title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights) on a HF ZeroGPU Space. First audio takes ~20s; your browser's voice covers failures.">
+                      <button className="listen" onClick={() => speak(result.description)}
+                              title="Hear the description in a Gemma voice: T5Gemma-TTS (built on Google's T5Gemma weights). First audio takes ~20s; your browser's voice covers failures.">
+                        <span className="ms" aria-hidden="true">volume_up</span>
                         {voiceLoading ? "synthesizing" : buffering ? "next line" : speaking ? "stop" : "listen"}
+                        {" "}<em>· <span className="gmt5">T5Gemma</span></em>
+                      </button>
+                    )}
+                  </div>
+                  <div className="d-tabs" role="tablist" aria-label="Evidence tabs">
+                    <button className={mTab === "desc" ? "on" : ""} onClick={() => setMTab("desc")}>
+                      <span className="ms" aria-hidden="true">subject</span>Description
+                    </button>
+                    {result.heard && (
+                      <button className={mTab === "sound" ? "on" : ""} onClick={() => setMTab("sound")}>
+                        <span className="ms" aria-hidden="true">graphic_eq</span>Soundtrack <span className="by">· <span className="gm3n">Gemma 3n</span></span>
+                      </button>
+                    )}
+                    {result.transcript && (
+                      <button className={mTab === "script" ? "on" : ""} onClick={() => setMTab("script")}>
+                        <span className="ms" aria-hidden="true">speech_to_text</span>Transcript <span className="by">· <span className="gm3n">Gemma 3n</span></span>
                       </button>
                     )}
                   </div>
                   {mTab === "desc" && (
                     <>
-                      <p className="desc">{result.description}</p>
-                      <p className="tab-meta"><b>grounded description</b> · the facts all four captions are built from</p>
+                      <p className="d-text">{result.description}</p>
+                      <div className="d-foot"><b>grounded description</b> · the facts all four captions are built from · verified per-caption by <span className="gme">EmbeddingGemma</span></div>
                     </>
                   )}
                   {mTab === "sound" && result.heard && (
                     <>
-                      <p className="desc">{result.heard}</p>
-                      <p className="tab-meta">soundtrack heard by <b>{result.audio_via || result.heard_via || "Gemma 3n"}</b> · experimental, never graded fact</p>
+                      <p className="d-text">{result.heard}</p>
+                      <div className="d-foot">soundtrack heard by <b>{result.audio_via || result.heard_via || "Gemma 3n"}</b> · experimental, never graded fact</div>
                     </>
                   )}
-                  {mTab === "transcript" && result.transcript && (
+                  {mTab === "script" && result.transcript && (
                     <>
-                      <p className="desc">"{result.transcript}"</p>
-                      <p className="tab-meta">speech transcribed by <b>{result.transcript_via || result.audio_via || "Gemma 3n"}</b> · appears only when the clip contains speech</p>
+                      <p className="d-text">&quot;{result.transcript}&quot;</p>
+                      <div className="d-foot">speech transcribed by <b>{result.transcript_via || result.audio_via || "Gemma 3n"}</b> · appears only when the clip contains speech</div>
                     </>
                   )}
-                </div>
-                <div className="langbar">
-                  <span className="ev-k">Four voices</span>
-                  <select className="langsel" value={lang} disabled={translating}
-                          onChange={(e) => changeLang(e.target.value)}
-                          aria-label="Caption language">
+                </article>
+
+                {/* four voices bar */}
+                <div className="v-bar">
+                  <div className="ev-k"><span className="ms" aria-hidden="true">graphic_eq</span>Four voices</div>
+                  <span className="ms" style={{ fontSize: 15, color: "var(--ink-faint)" }} aria-hidden="true">translate</span>
+                  <select className="lang" value={lang} disabled={translating}
+                          onChange={(e) => changeLang(e.target.value)} aria-label="Caption language">
                     {languages.map((l) => <option key={l} value={l}>{l}</option>)}
                   </select>
-                  <span className="langnote">
-                    {translating ? "Gemma is transcreating…"
-                      : lang !== "English" ? <>tone preserved in <b>{lang}</b>, by Gemma-4</>
-                      : <>Gemma speaks <b>140+ languages</b>. Try one</>}
+                  <span className="v-note">
+                    {translating ? <><span className="gm">Gemma</span> is transcreating…</>
+                      : lang !== "English" ? <>tone preserved in <b>{lang}</b>, by <span className="gm4">Gemma-4</span></>
+                      : <><span className="gm">Gemma</span> speaks <b>140+ languages</b>.{" "}
+                          <a onClick={() => languages[1] && changeLang(languages[1])}>Try one</a></>}
                   </span>
                 </div>
+
                 <div className="voices" style={translating ? { opacity: 0.45 } : undefined}>
                   {STYLES.map((st) => (
                     <article key={st.key} className="voice" style={{ "--c": `var(${st.cvar})`, "--d": st.d }}>
@@ -569,14 +566,14 @@ export default function Page() {
                         <span className="lam">{st.lam}</span>
                         <div><div className="v-name">{st.name}</div><span className="v-sub">{st.sub}</span></div>
                         {!translated && result.anchors?.[st.key] != null && (
-                          <span className="anchor"
-                                title="Fact anchor: EmbeddingGemma cosine similarity between this caption and the grounded description. A read-only consistency check.">
-                            facts {result.anchors[st.key].toFixed(2)}
+                          <span className="facts" title="EmbeddingGemma similarity to the grounded facts">
+                            <span className="ms" aria-hidden="true">verified</span>facts {result.anchors[st.key].toFixed(2)}
                           </span>
                         )}
                         <button className={"copy" + (copied === st.key ? " ok" : "")}
                                 onClick={() => copy(st.key, (translated || result.captions)?.[st.key])}>
-                          {copied === st.key ? "✓ copied" : "copy"}
+                          <span className="ms" aria-hidden="true">{copied === st.key ? "check" : "content_copy"}</span>
+                          <span className="lbl">{copied === st.key ? "copied" : "copy"}</span>
                         </button>
                       </div>
                       <p className="v-text">{(translated || result.captions)?.[st.key]}</p>
@@ -584,8 +581,14 @@ export default function Page() {
                   ))}
                 </div>
 
+                <div className="gm-receipt">
+                  run receipt&nbsp;&nbsp;<b className="gm4">Gemma-4</b> wrote {captionWords} words <span>·</span>{" "}
+                  <b className="gm3n">Gemma 3n</b> {heardAudio ? "heard the soundtrack" : "found no speech"} <span>·</span>{" "}
+                  <b className="gme">EmbeddingGemma</b> scored {scoredCount}/4 captions <span>·</span>{" "}
+                  <b className="gmt5">T5Gemma</b> standing by
+                </div>
                 <div className="meta">
-                  <span className="pill"><span className="dot" />served by <b>{BACKENDS[result.backend] || result.backend}</b></span>
+                  <span className="pill"><span className="dot" />served by {servedBy(BACKENDS[result.backend] || result.backend)}</span>
                   <span className="pill">model <span className="sep">·</span> <b>{result.model}</b></span>
                   <span className="pill">total <b>{result.timing?.total}s</b></span>
                   <span className="pill">vision <b>{result.timing?.ground}s</b></span>
@@ -596,82 +599,128 @@ export default function Page() {
           </section>
         )}
 
-        {/* ══════ GEMMAVERSE ══════ */}
-        <section className="gemmaverse">
-          <div className="rule" />
-          <h2 className="gv-title">Four Gemma models. One agent. <span className="gv-sub">· Google DeepMind's open family, working as a team</span></h2>
-          <p className="gv-lead">
-            Most captioning agents call one model. Prism runs <b>four members of the Gemma family</b>,
-            each doing the job it measures best at, and every one of them is visible in this demo.
-          </p>
-          <div className="gv-grid">
-            {[
-              { m: "Gemma-4-31B", role: "writes", d: "Authors every caption in every style, every clip, every mode: one structured-JSON call. It also grounds as the always-on last lane of the vision race.", where: "the four caption cards" },
-              { m: "Gemma 3n E4B", role: "hears", d: "Transcribes the soundtrack in 28-second chunks on a side thread, so what is said shapes the captions alongside what is shown.", where: "the Soundtrack and Transcript tabs" },
-              { m: "EmbeddingGemma", role: "verifies", d: "Scores each styled caption's semantic anchor to the grounded facts. Read-only by design: checks can never hurt the captions.", where: "the facts chip on every card" },
-              { m: "T5Gemma-TTS", role: "speaks", d: "The listen button speaks with a community TTS built on T5Gemma weights, synthesized on an AMD Radeon W7900.", where: "the listen button" },
-            ].map((g, i) => (
-              <div key={i} className="gv-card" style={{ "--c": `var(${CHIP_C[i]})` }}>
-                <div className="gv-head"><i /><b>{g.m}</b><span className="gv-role">{g.role}</span></div>
-                <p>{g.d}</p>
-                <div className="gv-where">in this demo: {g.where}</div>
-              </div>
-            ))}
+        {/* ══════════ THE GEMMA ENSEMBLE ══════════ */}
+        <section className="section" id="ensemble">
+          <div className="sec-head">
+            <h3>Four <span className="gm">Gemma</span> models. One agent.</h3>
+            <p className="sub">Most captioning agents call one model. Prism runs <b>four members of Google DeepMind&apos;s
+              open <span className="gm">Gemma</span> family</b>, each doing the job it measures best at, and every one of them is visible in this demo.</p>
+            <div className="flowline" aria-hidden="true">
+              clip <span className="ar">→</span>
+              <i style={{ "--c": "var(--tech)" }} /> <span className="gm3n">Gemma&nbsp;3n</span> hears <span className="ar">→</span>
+              <i style={{ "--c": "var(--formal)" }} /> <span className="gm4">Gemma-4</span> writes <span className="ar">→</span>
+              <i style={{ "--c": "var(--sarcastic)" }} /> <span className="gme">EmbeddingGemma</span> verifies <span className="ar">→</span>
+              <i style={{ "--c": "var(--nontech)" }} /> <span className="gmt5">T5Gemma</span> speaks
+            </div>
           </div>
-          <div className="gv-stats">
-            <div className="gv-stat"><b>Best signage OCR</b><span>of every serverless VLM we benchmarked on the public validation clips, at 3-4x their speed (GEMMA_FINDINGS §8)</span></div>
-            <div className="gv-stat"><b>0.9s per call</b><span>six parallel Gemma calls finish in about a second: the styling engine never waits</span></div>
-            <div className="gv-stat"><b>140+ languages</b><span>four voices transcreated with tone intact; sixteen live in the selector above</span></div>
+
+          <div className="models">
+            <article className="model" style={{ "--c": "var(--formal)" }}>
+              <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">stylus_note</span>WRITES</span></div>
+              <div className="m-name gm4">Gemma-4-31B</div>
+              <p className="m-body">Authors every caption in every style, every clip, every mode, all in one structured JSON call. Also grounds as the always-on last lane of the vision race.</p>
+              <p className="m-demo">in this demo: <b>the four caption cards</b></p>
+            </article>
+            <article className="model" style={{ "--c": "var(--tech)" }}>
+              <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">hearing</span>HEARS</span></div>
+              <div className="m-name gm3n">Gemma 3n E4B</div>
+              <p className="m-body">Transcribes the soundtrack in 28-second chunks on a side thread, so what is said shapes the captions alongside what is shown.</p>
+              <p className="m-demo">in this demo: <b>the Soundtrack and Transcript tabs</b></p>
+            </article>
+            <article className="model" style={{ "--c": "var(--sarcastic)" }}>
+              <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">verified</span>VERIFY</span></div>
+              <div className="m-name gme">EmbeddingGemma</div>
+              <p className="m-body">Scores each styled caption&apos;s semantic anchor to the grounded facts. Read-only by design: checks can never hurt the captions.</p>
+              <p className="m-demo">in this demo: <b>the facts chip on every card</b></p>
+            </article>
+            <article className="model" style={{ "--c": "var(--nontech)" }}>
+              <div className="m-head"><i /><span className="m-role"><span className="ms" aria-hidden="true">record_voice_over</span>SPEAKS</span></div>
+              <div className="m-name gmt5">T5Gemma-TTS</div>
+              <p className="m-body">The listen button speaks with a community TTS built on <span className="gmt5">T5Gemma</span> weights, synthesized on an AMD Radeon W7900.</p>
+              <p className="m-demo">in this demo: <b>the listen button</b></p>
+            </article>
           </div>
-          <p className="gv-foot">
-            Chosen by measurement, not branding: every claim above is reproduced in{" "}
-            <a href="https://github.com/DevDebojyotiC/prism/blob/main/GEMMA_FINDINGS.md" target="_blank" rel="noreferrer">GEMMA_FINDINGS.md</a>, evidence frames included, alongside what Gemma is not the right tool for.
-          </p>
+
+          <div className="meter" aria-label="Share of graded words authored by Gemma">
+            <div className="meter-top">
+              <span className="mt-label"><span className="ms" aria-hidden="true">workspace_premium</span>share of graded words authored by <span className="gm">Gemma</span></span>
+              <b className="mt-num">100%</b>
+            </div>
+            <div className="meter-bar"><i /></div>
+            <div className="meter-note">the frontier vision model contributes facts, never words</div>
+          </div>
+
+          <div className="stats">
+            <div className="stat"><div className="k"><span className="ms" aria-hidden="true">document_scanner</span>Best signage OCR</div><div className="v">of every serverless VLM we benchmarked on the public validation clips, at 3 to 4 times their speed. Reproduced in GEMMA_FINDINGS, section 8.</div></div>
+            <div className="stat"><div className="k"><span className="ms" aria-hidden="true">bolt</span>0.9s per call</div><div className="v">six parallel <span className="gm">Gemma</span> calls finish in about a second: the styling engine never waits.</div></div>
+            <div className="stat"><div className="k"><span className="ms" aria-hidden="true">translate</span>140+ languages</div><div className="v">four voices transcreated with tone intact; sixteen live in the selector above.</div></div>
+          </div>
+          <div className="receipts">
+            <span className="txt">Chosen by measurement, not branding. Every claim above is reproduced with evidence
+              frames, alongside an honest section on what <span className="gm">Gemma</span> is <em>not</em> the right tool for.</span>
+            <a className="findings" href="https://github.com/DevDebojyotiC/prism/blob/main/GEMMA_FINDINGS.md" target="_blank" rel="noreferrer">
+              <span className="ms" aria-hidden="true">fact_check</span>
+              GEMMA_FINDINGS.md <em>· every claim, reproduced</em>
+            </a>
+          </div>
         </section>
 
-        <section className="faq">
-          <div className="rule" />
-          <h2 className="faq-title">Straight answers <span className="faq-sub">· what judges (and skeptics) ask us</span></h2>
-          {[
-            {
-              q: "Is this really Gemma, or is Gemma just branding?",
-              a: "Really Gemma. Every graded word, all four caption styles on every clip, is authored by Gemma-4-31B in one structured-JSON call. The code path is public: gemma_client.py (the 3-tier Gemma failover) and caption.py stylize(). No other model writes a single word the judge sees.",
-            },
-            {
-              q: "Then what does the frontier vision model do?",
-              a: "Perception only: one grounding call turns up to 16 frames into a factual description, and that's where its job ends. Three vision lanes race in parallel (Kimi-k2p6, Qwen3-VL, and Gemma itself as the last resort) and the best-ranked answer that succeeds wins; Gemma then turns those facts into all four voices. Remove the FIREWORKS_API_KEY and Prism runs pure-Gemma end to end: same pipeline, Gemma does both jobs.",
-            },
-            {
-              q: "Why not use Gemma for vision too?",
-              a: "We did, and we measured why it costs accuracy. Gemma-4's encoder compresses each image to ~256 tokens and makes reproducible fine-grained errors (it read an afro puff as a 'high bun'; it names unverifiable pizza toppings with full confidence). No prompt can recover what the encoder never extracted. The full evidence, frames included, is in GEMMA_FINDINGS.md.",
-            },
-            {
-              q: "How do the four styles stay genuinely different?",
-              a: "One factual description, one Gemma call, four contracts: each style ships a definition, a good example, and an anti-example. Grounding once keeps every voice faithful to the same facts; the structured-JSON output keeps them separable and machine-checkable.",
-            },
-            {
-              q: "What happens when an API call fails mid-run?",
-              a: "Nothing visible. The grounding lanes run in parallel, so a fallback answer is already in hand the moment the primary fails instead of starting on an exhausted clock. Every call carries a per-clip deadline, the frame count degrades gracefully before anything surrenders, results are pre-seeded and rewritten atomically after every clip, and Gemma styling fails over across four serverless hosts. A crash, timeout, or rate-limit can never zero the run.",
-            },
-            {
-              q: "Does Prism use anything from the wider Gemma family?",
-              a: "Yes. The small 'facts' chip on every caption card is EmbeddingGemma: a cosine-similarity check that each styled caption stays semantically anchored to the grounded description. It's read-only by design; checks can't hurt the captions. On the roadmap: audio-input Gemma to ground on the soundtrack, and ShieldGemma 2 as a safety pass for brand use.",
-            },
-            {
-              q: "Can it caption in my language?",
-              a: "Yes: pick one from the selector above the caption cards. Gemma transcreates all four captions in one call, preserving each voice: the sarcasm stays dry in Hindi, the tech joke still lands in Japanese. Gemma covers 140+ languages; we surface sixteen in the demo.",
-            },
-          ].map((f, i) => (
-            <details key={i} className="faq-item">
-              <summary>{f.q}</summary>
-              <p>{f.a}</p>
+        {/* ══════════ STRAIGHT ANSWERS ══════════ */}
+        <section className="section" id="faq">
+          <div className="sec-head">
+            <h3>Straight answers</h3>
+            <p className="sub">what judges (and skeptics) ask us</p>
+          </div>
+          <div className="faq">
+            <details open>
+              <summary><span className="q">Is this really <span className="gm">Gemma</span>, or is <span className="gm">Gemma</span> just branding?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a"><b>Every graded word is generated by google/gemma-4-31B-it</b>: formal, sarcastic, tech, everyday,
+                every language, every clip. The frontier vision model never writes a word of output; it only contributes
+                neutral scene facts during grounding. The meta pills on every result name the exact model that served it.</p>
             </details>
-          ))}
+            <details>
+              <summary><span className="q">Then what does the frontier vision model do?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">It races in the grounding stage, where its only job is turning pixels into a neutral factual
+                description. That description is input, not output. The graded captions are authored entirely by <span className="gm4">Gemma-4</span>{" "}
+                from those facts plus <span className="gm3n">Gemma 3n</span>&apos;s audio transcript.</p>
+            </details>
+            <details>
+              <summary><span className="q">Why not use <span className="gm">Gemma</span> for vision too?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">We do. <span className="gm4">Gemma-4</span> runs as the always-on last lane of the vision race, and it wins outright on
+                signage OCR (GEMMA_FINDINGS, section 8). Where a bigger model reads a frame better, we let it, because the facts
+                feed <span className="gm">Gemma</span> rather than replace it.</p>
+            </details>
+            <details>
+              <summary><span className="q">How do the four styles stay genuinely different?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">One structured-JSON call with per-style constraints, then <b className="gme">EmbeddingGemma</b> scores each
+                caption&apos;s similarity to the grounded facts, shown as the facts chip on every card. Formal should score high;
+                humor is allowed to drift, and the score shows you exactly how far.</p>
+            </details>
+            <details>
+              <summary><span className="q">What happens when an API call fails mid-run?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">The grounding lanes run in parallel, so a fallback answer is already in hand the moment the
+                primary fails. Styling waterfalls across serverless hosts, and whichever lane serves the run is named in the
+                meta pills; partial results are never shown as complete ones.</p>
+            </details>
+            <details>
+              <summary><span className="q">Does Prism use anything from the wider <span className="gm">Gemma</span> family?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">Four members: <b className="gm4">Gemma-4-31B</b> writes, <b className="gm3n">Gemma 3n E4B</b> hears, <b className="gme">EmbeddingGemma</b>{" "}
+                verifies, and <b className="gmt5">T5Gemma</b> speaks. Each was chosen by measurement for its lane, and each is visible in
+                the demo; nothing runs backstage.</p>
+            </details>
+            <details>
+              <summary><span className="q">Can it caption in my language?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a"><span className="gm4">Gemma-4</span> transcreates all four voices across 140+ languages: tone stays intact, rather than
+                word-for-word translation. Sixteen are live in the selector above the caption cards; the rest are one config line away.</p>
+            </details>
+          </div>
         </section>
 
+        {/* ══════════ FOOTER ══════════ */}
         <footer>
           <div className="rule" />
-          <p>Prism · AMD Developer Hackathon ACT II · Track 2 · every caption authored by Gemma-4 · built on Google DeepMind's open-weights Gemma family</p>
+          <p>Prism · AMD Developer Hackathon ACT II · Track 2<br />
+             every caption authored by <b className="gm4">Gemma-4</b> · built on Google DeepMind&apos;s open-weights <b className="gm">Gemma</b> family</p>
         </footer>
       </main>
     </>
