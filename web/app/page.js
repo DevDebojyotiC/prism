@@ -686,7 +686,7 @@ export default function Page() {
           <div className="stats">
             <div className="stat"><div className="k"><span className="ms amd-ic" aria-hidden="true">memory</span>Radeon PRO W7900</div><div className="v">RDNA3, gfx1100, 48 GB, ROCm 7.2. The Gemma voice (T5Gemma-TTS) runs here; the engine label on the listen button proves it live.</div></div>
             <div className="stat"><div className="k"><span className="ms amd-ic" aria-hidden="true">visibility</span>Vision serves on RDNA3</div><div className="v">We ran Gemma-3-12B and Qwen-VL on the W7900 through vLLM; both read a real image accurately.</div></div>
-            <div className="stat"><div className="k"><span className="ms amd-ic" aria-hidden="true">bolt</span>~700 tok/s at scale</div><div className="v">Qwen2.5-7B on the card: ~29 tok/s single, ~700 tok/s across 32 concurrent streams. Radeon earns its place under batch load.</div></div>
+            <div className="stat"><div className="k"><span className="ms amd-ic" aria-hidden="true">bolt</span>~700 tok/s at scale</div><div className="v">Qwen2.5-7B on the card: ~29 tok/s single, ~700 tok/s across 32 concurrent streams under batch load.</div></div>
           </div>
           <div className="receipts">
             <span className="txt">The graded path uses serverless providers because the scoring GPU is time-gated; the Gemma <em>voice</em> runs on <b className="amd-word">AMD</b>. On a persistent Radeon GPU the whole pipeline could run on one box, the findings lay out that all-<b className="amd-word">AMD</b> architecture.</span>
@@ -746,8 +746,8 @@ export default function Page() {
                 word-for-word translation. Sixteen are live in the selector above the caption cards; the rest are one config line away.</p>
             </details>
             <details>
-              <summary><span className="q">Does Prism actually run on <b className="amd-word">AMD</b>, or is that just the voice?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
-              <p className="a">The Gemma voice is <b>genuinely synthesized on an <b className="amd-word">AMD</b> Radeon PRO W7900</b> (T5Gemma-TTS via ROCm 7.2); the
+              <summary><span className="q">Does Prism run on <b className="amd-word">AMD</b>, or is that just the voice?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <p className="a">The Gemma voice is <b>synthesized on an <b className="amd-word">AMD</b> Radeon PRO W7900</b> (T5Gemma-TTS via ROCm 7.2); the
                 listen button&apos;s red badge and the API&apos;s <code>engine</code> field prove it live. The graded captioning path deliberately
                 uses serverless providers, and the styling chain also carries an <b className="amd-word">AMD</b>-hosted <span className="gm3n">Gemma-3</span> failover tier.</p>
             </details>
@@ -756,11 +756,11 @@ export default function Page() {
               <p className="a">Because the hackathon GPU is <b>time-gated</b> and the leaderboard re-scores over days: a self-hosted grading
                 endpoint would be dead when a later scoring run fires, and the container would error out. So the graded path stays on
                 always-on serverless by design, and the non-graded voice (which has a browser fallback) is the one safe place for the pod.
-                On a <em>persistent</em> Radeon GPU the calculus inverts, one box could host the whole <span className="gm">Gemma</span> family; the
+                On a <em>persistent</em> Radeon GPU, one box could host the whole <span className="gm">Gemma</span> family; the
                 all-<b className="amd-word">AMD</b> architecture is laid out in AMD_FINDINGS.md above.</p>
             </details>
             <details>
-              <summary><span className="q">What did you actually verify on the Radeon hardware?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
+              <summary><span className="q">What did you verify on the Radeon hardware?</span><span className="pm"><span className="ms" aria-hidden="true">add</span></span></summary>
               <p className="a">On the W7900 (RDNA3, gfx1100): <span className="gm3n">Gemma-3-12B</span> and Qwen-VL vision both read a real image accurately,
                 Qwen2.5-7B hit ~700 tokens/s across 32 concurrent streams, and T5Gemma-TTS serves the shipped voice. The only gap is
                 <span className="gm4"> Gemma-4</span>, absent from the pod&apos;s pre-built vLLM, which is a build-date gap, not a hardware limit. Full numbers in AMD_FINDINGS.md.</p>
